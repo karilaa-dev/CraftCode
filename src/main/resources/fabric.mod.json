@@ -1,21 +1,21 @@
 {
   "schemaVersion": 1,
-  "id": "t3-mc",
-  "provides": ["t3mc"],
+  "id": "craftcode",
+  "provides": ["t3-mc", "t3mc"],
   "version": "${version}",
-  "name": "t3-mc",
+  "name": "CraftCode",
   "authors": ["karilaa-dev"],
   "license": "MIT",
   "contact": {
-    "homepage": "https://modrinth.com/mod/t3-mc",
-    "sources": "https://github.com/karilaa-dev/t3-mc",
-    "issues": "https://github.com/karilaa-dev/t3-mc/issues"
+    "homepage": "https://modrinth.com/mod/craftcode",
+    "sources": "https://github.com/karilaa-dev/CraftCode",
+    "issues": "https://github.com/karilaa-dev/CraftCode/issues"
   },
-  "icon": "assets/t3mc/icon.png",
-  "description": "An unofficial client for chatting with T3 Code agents and receiving updates in Minecraft. By karilaa-dev.\nModrinth: https://modrinth.com/mod/t3-mc\nGitHub: https://github.com/karilaa-dev/t3-mc",
+  "icon": "assets/craftcode/icon.png",
+  "description": "CraftCode is an unofficial Minecraft client for T3 Code. Chat with coding agents, share images, and answer questions in-game.\nModrinth: https://modrinth.com/mod/craftcode\nGitHub: https://github.com/karilaa-dev/CraftCode",
   "environment": "client",
   "entrypoints": {
-    "client": ["dev.t3mc.T3McClient"]
+    "client": ["dev.craftcode.CraftCodeClient"]
   },
   "jars": [
     { "file": "META-INF/jars/spruceui-${spruceUiVersion}.jar" }

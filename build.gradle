@@ -2,8 +2,8 @@ plugins {
     id 'net.fabricmc.fabric-loom' version '1.19.4'
 }
 
-group = 'dev.t3mc'
-version = '0.12.0'
+group = 'dev.craftcode'
+version = '0.13.0'
 
 repositories {
     maven {

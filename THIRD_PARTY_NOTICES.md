@@ -1,6 +1,6 @@
 # Third-party notices
 
-T3 Code for Minecraft's original code and artwork are available under the [MIT License](LICENSE). Third-party libraries and artwork carry the terms below. In the release JAR, additional license texts are in `META-INF/licenses/t3mc/`. In the source tree, the same files are in [src/main/resources/META-INF/licenses/t3mc](src/main/resources/META-INF/licenses/t3mc).
+CraftCode's original code and artwork are available under the [MIT License](LICENSE). Third-party libraries and artwork carry the terms below. In the release JAR, additional license texts are in `META-INF/licenses/craftcode/`. In the source tree, the same files are in [src/main/resources/META-INF/licenses/craftcode](src/main/resources/META-INF/licenses/craftcode).
 
 ## Libraries in the mod JAR
 

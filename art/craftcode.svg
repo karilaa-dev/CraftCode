@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 24 24" shape-rendering="crispEdges">
+  <title>CraftCode</title>
+  <path fill="#19322c" d="M0 0h24v24H0z"/>
+  <path fill="#244139" d="M0 3h24v4h-6V6h-5v2H7V6H3v1H0z"/>
+  <path fill="#6da366" d="M0 0h24v4h-3V3h-4v2h-4V3H8v2H4V4H0z"/>
+  <path fill="#a0c780" d="M0 0h24v1h-5v1h-3V1H9v1H6V1H0z"/>
+  <path id="c" fill="#f3f2dc" d="M5 8h6v3H6v6h5v3H5v-1H3V9h2z"/>
+  <path fill="#a3d6a9" d="M15 8h6v3h-5v6h5v3h-6v-1h-2V9h2z"/>
+</svg>
