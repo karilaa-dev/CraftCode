@@ -1,4 +1,4 @@
-# CraftCode
+# <img src="src/main/resources/assets/craftcode/icon.png" width="32" height="32" alt=""> CraftCode
 
 CraftCode is an unofficial Minecraft client for T3 Code.
 
