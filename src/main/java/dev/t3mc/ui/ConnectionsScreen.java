@@ -27,17 +27,18 @@ import java.util.Locale;
  * the primary button opens (its label names it); the accent bar and the "Now open" line show the current destination.
  */
 final class ConnectionsScreen extends SpruceScreen {
-    private static final int MAX_W = 380;
-    private static final int HEAD = 38;   // title + destination line
-    private static final int FOOT = 69;   // hint line + footer buttons
-    private static final int EMPTY_H = 40;
+    private static final int MAX_W = 396;
+    private static final int HEAD = 40;   // title + destination line
+    private static final int FOOT = 72;   // hint line + footer buttons
+    private static final int EMPTY_H = 44;
 
     private final @Nullable Screen workspace;
     private final ClientController controller;
     private ConnectionsView view;
     private @Nullable ServerList list;
     private @Nullable FlatButton primary, forget, refresh;
-    private FlatButton visibility, icon, edit, disconnect;
+    private FlatButton visibility, edit, disconnect;
+    private @Nullable ConnectionIconButton icon;
     private static final List<String> ICONS = List.of("", "★", "◆", "●", "▲", "■", "♥", "☀");
     private @Nullable GuiEventListener nextFocus;
     private @Nullable String cursorKey;
@@ -77,17 +78,20 @@ final class ConnectionsScreen extends SpruceScreen {
         int maxList = Math.max(ServerList.SERVER_H, height - 62 - HEAD - FOOT);
         int listH = rows.isEmpty() ? EMPTY_H : Math.min(ServerList.contentHeight(rows), maxList);
         int panelH = HEAD + listH + FOOT;
-        top = 56;
+        top = 58;
         bottom = top + panelH;
         listTop = top + HEAD;
         listBottom = listTop + listH;
-        int left = x + 8, right = x + w - 8;
+        int left = x + 10, right = x + w - 10;
 
-        int half = (right - left - 4) / 2;
-        button(left, 30, half, L10n.tr("chat.workspace.servers", "Servers"), FlatButton.Kind.SELECTED, () -> {});
-        button(left + half + 4, 30, right - left - half - 4, L10n.tr("settings.other", "Other settings"),
-                FlatButton.Kind.NORMAL, () -> minecraft.gui.setScreen(new SettingsScreen(workspace, controller)));
-        visibility = icon = edit = disconnect = null;
+        int segPad = 2;
+        int segW = right - left - segPad * 2;
+        int half = (segW - 4) / 2;
+        button(left + segPad, 30, half, L10n.tr("chat.workspace.servers", "Servers"), FlatButton.Kind.SELECTED, () -> {});
+        button(left + segPad + half + 4, 30, segW - half - 4, L10n.tr("settings.other", "Other settings"),
+                FlatButton.Kind.SUBTLE, () -> minecraft.gui.setScreen(new SettingsScreen(workspace, controller)));
+        visibility = edit = disconnect = null;
+        icon = null;
         list = null;
         if (!rows.isEmpty()) {
             list = new ServerList(Position.of(x + 4, listTop), w - 8, listH, new ServerList.Actions() {
@@ -125,22 +129,24 @@ final class ConnectionsScreen extends SpruceScreen {
         }
         if (rows.isEmpty()) {
             String closeLabel = L10n.tr("connections.close", "Close");
-            String addLabel = L10n.tr("connections.add_server", "+ Add server");
-            int addW = buttonWidth(addLabel, 86);
+            String addLabel = WorkspaceScreen.stripLeadingPlus(L10n.tr("connections.add_server", "+ Add server"));
+            int addW = buttonWidth(addLabel, 94) + 10;
             button(left, footY, buttonWidth(closeLabel, 60), closeLabel, FlatButton.Kind.NORMAL, this::onClose);
-            this.setFocused(button(right - addW, footY, addW, addLabel, FlatButton.Kind.PRIMARY, this::addServer));
+            this.setFocused(button(right - addW, footY, addW, addLabel, FlatButton.Kind.PRIMARY, this::addServer)
+                    .withIcon(FlatButton.Icon.PLUS));
             return;
         }
         // Header button sized for the longer of its two labels so it doesn't jump while refreshing; keeps the title clear.
-        int refreshW = Math.min(Math.max(buttonWidth(L10n.tr("connections.refresh", "Refresh links"), 76),
-                buttonWidth(L10n.tr("connections.refreshing", "Refreshing…"), 76)),
-                right - left - font.width(this.getTitle().copy().withStyle(st -> st.withBold(true))) - 8);
-        refresh = this.addRenderableWidget(new FlatButton(Position.of(right - refreshW, top + 4), refreshW, 15,
-                L10n.tr("connections.refresh", "Refresh links"), b -> refreshSelected()));
-        String addLabel = L10n.tr("connections.add", "+ Add");
+        int refreshW = Math.min(Math.max(buttonWidth(L10n.tr("connections.refresh", "Refresh links"), 84) + 10,
+                buttonWidth(L10n.tr("connections.refreshing", "Refreshing…"), 84) + 10),
+                right - left - font.width(this.getTitle().copy().withStyle(st -> st.withBold(true))) - 10);
+        refresh = this.addRenderableWidget(new FlatButton(Position.of(right - refreshW, top + 6), refreshW, 17,
+                L10n.tr("connections.refresh", "Refresh links"), b -> refreshSelected()).withIcon(FlatButton.Icon.REFRESH));
+        String addLabel = WorkspaceScreen.stripLeadingPlus(L10n.tr("connections.add", "+ Add"));
         String forgetLabel = L10n.tr("connections.forget", "Forget");
-        int addW = buttonWidth(addLabel, 46), forgetW = buttonWidth(forgetLabel, 50);
+        int addW = buttonWidth(addLabel, 54) + 10, forgetW = buttonWidth(forgetLabel, 54);
         button(left, footY, addW, addLabel, FlatButton.Kind.NORMAL, this::addServer)
+                .withIcon(FlatButton.Icon.PLUS)
                 .setTooltip(Component.literal(L10n.tr("connections.add.tooltip", "Add another T3 Code server")));
         forget = button(left + addW + 4, footY, forgetW, forgetLabel, FlatButton.Kind.NORMAL, () -> {
             var owner = list == null ? null : list.ownerOf(list.cursorRow());
@@ -157,7 +163,8 @@ final class ConnectionsScreen extends SpruceScreen {
         int optionY = footY - 23;
         int quarter = (right - left - 12) / 4;
         visibility = button(left, optionY, quarter, "", FlatButton.Kind.NORMAL, () -> changeDisplay(false));
-        icon = button(left + quarter + 4, optionY, quarter, "", FlatButton.Kind.NORMAL, () -> changeDisplay(true));
+        icon = this.addRenderableWidget(new ConnectionIconButton(Position.of(left + quarter + 4, optionY), quarter, 19,
+                b -> changeDisplay(true)));
         edit = button(left + 2 * (quarter + 4), optionY, quarter, L10n.tr("settings.edit", "Edit server"), FlatButton.Kind.NORMAL, () -> {
             if (list.cursorRow() instanceof ServerList.Server s)
                 minecraft.gui.setScreen(new SettingsScreen(this, controller, false, s.profile()));
@@ -198,7 +205,7 @@ final class ConnectionsScreen extends SpruceScreen {
             visibility.setLabel(display.hidden() ? L10n.tr("settings.hidden", "Hidden") : L10n.tr("settings.shown", "Visible"));
             visibility.setKind(display.hidden() ? FlatButton.Kind.NORMAL : FlatButton.Kind.SELECTED);
             visibility.setActive(selectable);
-            icon.setLabel(L10n.tr("settings.icon", "Icon: %s", display.icon().isEmpty() ? "–" : display.icon()));
+            icon.setMark(display.icon());
             icon.setActive(selectable);
             edit.setActive(row instanceof ServerList.Server);
             disconnect.setActive(row instanceof ServerList.Server s && s.profile().id().equals(view.activeProfileId())
@@ -424,24 +431,23 @@ final class ConnectionsScreen extends SpruceScreen {
         if (Theme.seeThrough()) Theme.seeThroughBackdrop(minecraft, g, width, height);
         else super.extractBackground(g, mx, my, delta);
         g.fill(0, 0, width, height, Theme.BG);
-        g.fill(x, top, x + w, bottom, Theme.PANEL);
-        // Hairline frame and rules separating the header and footer from the scrolling list.
-        g.fill(x, top, x + w, top + 1, Theme.BORDER);
-        g.fill(x, bottom - 1, x + w, bottom, Theme.BORDER);
-        g.fill(x, top, x + 1, bottom, Theme.BORDER);
-        g.fill(x + w - 1, top, x + w, bottom, Theme.BORDER);
-        g.fill(x + 1, listTop - 3, x + w - 1, listTop - 2, Theme.RULE);
-        g.fill(x + 1, listBottom + 2, x + w - 1, listBottom + 3, Theme.RULE);
+        // Segmented tab bar shell
+        int left = x + 10, right = x + w - 10;
+        UiShapes.panel(g, left, 28, right - left, 23, UiShapes.R_CONTROL, Theme.INPUT, Theme.BORDER, false);
+        // Sculpted main card
+        UiShapes.panel(g, x, top, w, bottom - top, UiShapes.R_PANEL, Theme.PANEL_SURFACE, Theme.BORDER_STRONG, true);
+        g.fill(x + 2, listTop - 3, x + w - 2, listTop - 2, Theme.BORDER_SUBTLE);
+        g.fill(x + 2, listBottom + 2, x + w - 2, listBottom + 3, Theme.BORDER_SUBTLE);
     }
 
     @Override
     public void extractRenderState(SpruceGuiGraphics g, int mx, int my, float delta) {
-        int left = x + 8, right = x + w - 8;
+        int left = x + 10, right = x + w - 10;
         var heading = Component.literal(L10n.tr("settings.title", "T3 Code Settings")).withStyle(style -> style.withBold(true));
         Theme.plate(g, left, 10, font.width(heading), font.lineHeight, Theme.TEXT_PLATE);
         g.text(font, heading, left, 10, Theme.TEXT, false);
-        g.text(font, this.getTitle().copy().withStyle(s -> s.withBold(true)), left, top + 9, Theme.TEXT, false);
-        drawDestination(g, left, right, top + 22);
+        g.text(font, this.getTitle().copy().withStyle(s -> s.withBold(true)), left, top + 10, Theme.TEXT, false);
+        drawDestination(g, left, right, top + 24);
 
         if (list == null) {
             g.text(font, Theme.ellipsize(font, L10n.tr("connections.empty", "No servers yet"), right - left),
@@ -511,7 +517,7 @@ final class ConnectionsScreen extends SpruceScreen {
         }
         if (chipW > 0) {
             int ax = cx + 6;
-            Theme.outline(g, ax, y - 2, chipW, 12, ro ? Theme.AMBER_BORDER : Theme.BORDER);
+            UiShapes.pill(g, ax, y - 2, chipW, 12, ro ? Theme.AMBER_BG : Theme.BUTTON, ro ? Theme.AMBER_BORDER : Theme.BORDER);
             g.text(font, chip, ax + 3, y, ro ? Theme.AMBER : Theme.MUTED, false);
         }
     }
@@ -534,5 +540,55 @@ final class ConnectionsScreen extends SpruceScreen {
             }
             case ServerList.Note n -> n.text();
         };
+    }
+
+    /** Cycles the connection mark while rendering built-in marks as crisp pixel icons inline with the localized label. */
+    private static final class ConnectionIconButton extends FlatButton {
+        private String mark = "";
+
+        ConnectionIconButton(Position position, int width, int height, PressAction action) {
+            super(position, width, height, "", Kind.NORMAL, action);
+        }
+
+        void setMark(String mark) {
+            this.mark = mark == null ? "" : mark;
+            this.setLabel(L10n.tr("settings.icon", "Icon: %s", this.mark.isEmpty() ? "–" : this.mark));
+        }
+
+        @Override
+        protected void extractText(SpruceGuiGraphics graphics, int color) {
+            if (!UiIcons.isConnectionMark(this.mark)) {
+                super.extractText(graphics, color);
+                return;
+            }
+            String template = L10n.tr("settings.icon", "Icon: %s", "\u0000");
+            int split = template.indexOf('\u0000');
+            if (split < 0) {
+                super.extractText(graphics, color);
+                return;
+            }
+            String before = template.substring(0, split);
+            String after = template.substring(split + 1);
+            var font = this.client.font;
+            int pressOffset = this.isPressedState() ? 1 : 0;
+            int textInk = this.isActive() ? Theme.BUTTON_TEXT : Theme.TEXT_DISABLED;
+            int markInk = this.isActive() ? Theme.ACCENT : Theme.TEXT_DISABLED;
+            int maxText = Math.max(0, this.getWidth() - 8 - UiIcons.MARK_SIZE);
+            String shownBefore = Theme.ellipsize(font, before, maxText);
+            String shownAfter = after.isEmpty() ? "" : Theme.ellipsize(font, after, Math.max(0, maxText - font.width(shownBefore)));
+            int totalW = font.width(shownBefore) + UiIcons.MARK_SIZE + font.width(shownAfter);
+            int x = this.getX() + (this.getWidth() - totalW) / 2;
+            int textY = this.getY() + (this.getHeight() - font.lineHeight) / 2 + 1 + pressOffset;
+            int iconY = this.getY() + (this.getHeight() - UiIcons.MARK_SIZE) / 2 + pressOffset;
+            if (!shownBefore.isEmpty()) {
+                graphics.text(font, shownBefore, x, textY, textInk, false);
+                x += font.width(shownBefore);
+            }
+            UiIcons.drawConnectionMark(graphics, this.mark, x, iconY, markInk);
+            x += UiIcons.MARK_SIZE;
+            if (!shownAfter.isEmpty()) {
+                graphics.text(font, shownAfter, x, textY, textInk, false);
+            }
+        }
     }
 }

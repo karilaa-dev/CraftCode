@@ -42,9 +42,9 @@ import java.util.Set;
 final class ModelPickerScreen extends SpruceScreen {
     static final String TAB_ALL = "\u0000all";
     static final String TAB_FAVORITES = "\u0000fav";
-    private static final int PAD = 8;
-    private static final int TAB_H = 14;
-    private static final int FOOTER_H = 16;
+    private static final int PAD = 10;
+    private static final int TAB_H = 18;
+    private static final int FOOTER_H = 18;
     private static final long SEARCH_DEBOUNCE_MS = 350;
 
     /** {@code label} is the visible text (empty when the icon alone identifies the provider); {@code name} is spoken and hovered. */
@@ -179,20 +179,20 @@ final class ModelPickerScreen extends SpruceScreen {
         this.summaryY = y;
         y += font.lineHeight + 5;
 
-        this.search = new InputField(Position.of(innerX, y), innerW, L10n.tr("model.search", "Search models"),
-                L10n.tr("model.search.placeholder", "Search models or type a model ID…"));
+        this.search = new InputField(Position.of(innerX, y), innerW, 19, L10n.tr("model.search", "Search models"),
+                L10n.tr("model.search.placeholder", "Search models or type a model ID…")).searchable();
         this.search.setTextPredicate(t -> t.length() <= 200);
         this.search.setText(this.query);
         this.search.setCursorToEnd();
         this.search.setChangedListener(this::onQueryChanged);
         this.addRenderableWidget(this.search);
-        y += 18 + 4;
+        y += 19 + 5;
 
         this.tabsY = y;
-        y += TAB_H + 4;
+        y += TAB_H + 5;
 
         this.footerY = this.py + this.ph - PAD - FOOTER_H;
-        int bottom = this.footerY - 5;
+        int bottom = this.footerY - 6;
 
         // Fit two typical option rows on a compact screen while keeping at least two model rows.
         var choice = this.draftChoice();
@@ -256,15 +256,15 @@ final class ModelPickerScreen extends SpruceScreen {
         }
 
         String applyLabel = applyText(), cancelLabel = L10n.tr("model.cancel", "Cancel"), retryLabel = L10n.tr("model.retry", "Retry");
-        int applyW = this.applyW = Math.max(64, Math.max(font.width(applyLabel), font.width(applyingText())) + 12);
-        int cancelW = this.cancelW = Math.max(54, font.width(cancelLabel) + 12);
-        int retryW = this.retryW = Math.max(48, font.width(retryLabel) + 12);
+        int applyW = this.applyW = Math.max(66, Math.max(font.width(applyLabel), font.width(applyingText())) + 16);
+        int cancelW = this.cancelW = Math.max(56, font.width(cancelLabel) + 14);
+        int retryW = this.retryW = Math.max(56, font.width(retryLabel) + 22);
         this.applyButton = this.addRenderableWidget(new FlatButton(Position.of(innerX + innerW - applyW, this.footerY), applyW, FOOTER_H,
                 applyLabel, FlatButton.Kind.PRIMARY, b -> this.apply()));
-        this.addRenderableWidget(new FlatButton(Position.of(innerX + innerW - applyW - 4 - cancelW, this.footerY), cancelW, FOOTER_H,
+        this.addRenderableWidget(new FlatButton(Position.of(innerX + innerW - applyW - 5 - cancelW, this.footerY), cancelW, FOOTER_H,
                 cancelLabel, b -> this.onClose()));
-        this.retryButton = this.addRenderableWidget(new FlatButton(Position.of(innerX + innerW - applyW - 8 - cancelW - retryW, this.footerY),
-                retryW, FOOTER_H, retryLabel, b -> this.state.reload()));
+        this.retryButton = this.addRenderableWidget(new FlatButton(Position.of(innerX + innerW - applyW - 10 - cancelW - retryW, this.footerY),
+                retryW, FOOTER_H, retryLabel, b -> this.state.reload()).withIcon(FlatButton.Icon.REFRESH));
 
         this.rowsKey = new Object();
         this.refreshRows();
@@ -284,9 +284,9 @@ final class ModelPickerScreen extends SpruceScreen {
         int x = 0;
         var catalog = this.catalog();
         String all = L10n.tr("model.tab.all", "All");
-        String favorites = "★ " + this.favoriteList.size();
+        String favCount = Integer.toString(this.favoriteList.size());
         x = this.addTab(TAB_ALL, all, all, null, x, false);
-        x = this.addTab(TAB_FAVORITES, favorites, favorites, null, x, false);
+        x = this.addTab(TAB_FAVORITES, favCount, "★ " + favCount, null, x, false);
         for (var p : catalog) {
             // Recognized brands show as icons; a name stays beside the icon when another instance shares it.
             var icon = ProviderIcon.resolve(p, p.id());
@@ -294,7 +294,7 @@ final class ModelPickerScreen extends SpruceScreen {
             x = this.addTab(p.id(), iconOnly ? "" : Theme.ellipsize(font, p.label(), 110), p.label(), icon, x,
                     this.listsNoModels(p));
         }
-        this.tabsWidth = x - 2;
+        this.tabsWidth = x - 3;
         // A provider tab that disappeared falls back to All.
         if (!this.tab.equals(TAB_ALL) && !this.tab.equals(TAB_FAVORITES)
                 && this.tabs.stream().noneMatch(t -> t.key().equals(this.tab)) && this.state.catalogLoaded()) {
@@ -304,10 +304,12 @@ final class ModelPickerScreen extends SpruceScreen {
     }
 
     private int addTab(String key, String label, String name, @Nullable ProviderIcon icon, int x, boolean dim) {
-        int content = (icon == null ? 0 : ProviderIcon.SIZE) + (icon != null && !label.isEmpty() ? 4 : 0) + this.font.width(label);
-        int w = content + 12;
+        boolean favTab = key.equals(TAB_FAVORITES);
+        int iconW = favTab ? 7 : icon == null ? 0 : ProviderIcon.SIZE;
+        int content = iconW + (iconW > 0 && !label.isEmpty() ? 4 : 0) + this.font.width(label);
+        int w = content + 14;
         this.tabs.add(new Tab(key, label, name, icon, x, w, dim));
-        return x + w + 2;
+        return x + w + 3;
     }
 
     private void clampTabScroll(boolean revealActive) {
@@ -790,9 +792,8 @@ final class ModelPickerScreen extends SpruceScreen {
     public void extractRenderState(SpruceGuiGraphics graphics, int mouseX, int mouseY, float delta) {
         var font = this.font;
         int x = this.px, y = this.py, w = this.pw, h = this.ph;
-        graphics.fill(x + 2, y + 2, x + w + 2, y + h + 2, 0x50000000); // drop shadow
-        graphics.fill(x, y, x + w, y + h, Theme.PANEL_SURFACE);
-        Theme.outline(graphics, x, y, w, h, Theme.BORDER);
+        UiShapes.dropShadow(graphics, x, y, w, h, UiShapes.R_PANEL);
+        UiShapes.panel(graphics, x, y, w, h, UiShapes.R_PANEL, Theme.PANEL_SURFACE, Theme.BORDER_STRONG, true);
         int innerX = x + PAD;
         int innerW = w - PAD * 2;
         var catalog = this.catalog();
@@ -810,7 +811,6 @@ final class ModelPickerScreen extends SpruceScreen {
             String opts = ModelFormat.optionsSummary(model, current.options());
             String tail = opts.isEmpty() ? "" : "  ·  " + opts;
             inUseFull = ModelFormat.providerLabel(catalog, current.providerId()) + " · " + name + tail;
-            // A provider whose icon alone identifies it shows as that icon beside the model.
             inUseIcon = ModelFormat.distinctIcon(catalog, current.providerId());
             inUse = inUseIcon == null ? inUseFull : name + tail;
         }
@@ -834,19 +834,29 @@ final class ModelPickerScreen extends SpruceScreen {
             boolean active = t.key().equals(this.tab);
             boolean hot = tabsHot && mouseX >= tx && mouseX < tx + t.w();
             int bg = active ? Theme.SELECTED : hot ? Theme.BUTTON_HOVER : Theme.BUTTON;
-            graphics.fill(tx, this.tabsY, tx + t.w(), this.tabsY + TAB_H, bg);
-            if (active) graphics.fill(tx, this.tabsY + TAB_H - 1, tx + t.w(), this.tabsY + TAB_H, Theme.ACCENT);
+            int border = active ? Theme.mix(Theme.BORDER, Theme.ACCENT, 0.55f) : hot ? Theme.BORDER_STRONG : Theme.BORDER_SUBTLE;
+            UiShapes.panel(graphics, tx, this.tabsY, t.w(), TAB_H, UiShapes.R_CONTROL, bg, border, active || hot);
+            if (active && t.w() > 8) {
+                graphics.fill(tx + 3, this.tabsY + TAB_H - 2, tx + t.w() - 3, this.tabsY + TAB_H - 1, Theme.ACCENT);
+            }
             boolean hasDraft = t.key().equals(this.draft.providerId());
+            boolean favTab = t.key().equals(TAB_FAVORITES);
             int color = active ? Theme.TEXT : t.dim() ? Theme.FAINT : Theme.TEXT_SOFT;
-            if (t.key().equals(TAB_FAVORITES) && !active) color = Theme.AMBER;
-            int cx = tx + 6;
-            if (t.icon() != null) {
+            int cx = tx + 7;
+            if (favTab) {
+                UiIcons.star(graphics, cx, this.tabsY + (TAB_H - 7) / 2, Theme.AMBER, active || !this.favoriteList.isEmpty());
+                cx += 11;
+            } else if (t.icon() != null) {
                 t.icon().draw(graphics, cx, this.tabsY + (TAB_H - ProviderIcon.SIZE) / 2, t.dim() && !active);
                 cx += ProviderIcon.SIZE + 4;
             }
-            if (!t.label().isEmpty()) graphics.text(font, t.label(), cx, this.tabsY + (TAB_H - font.lineHeight) / 2 + 1, color, false);
+            if (!t.label().isEmpty()) {
+                graphics.text(font, t.label(), cx, this.tabsY + (TAB_H - font.lineHeight) / 2 + 1, color, false);
+            }
             if (hot) hoveredTab = t;
-            if (hasDraft && !active) graphics.fill(tx + t.w() / 2 - 2, this.tabsY + TAB_H - 2, tx + t.w() / 2 + 2, this.tabsY + TAB_H, Theme.ACCENT);
+            if (hasDraft && !active) {
+                graphics.fill(tx + t.w() / 2 - 2, this.tabsY + TAB_H - 2, tx + t.w() / 2 + 2, this.tabsY + TAB_H - 1, Theme.ACCENT);
+            }
             if (hot) graphics.requestCursor(CursorTypes.POINTING_HAND);
         }
         graphics.disableScissor();
@@ -855,17 +865,17 @@ final class ModelPickerScreen extends SpruceScreen {
             graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(hoveredTab.name()), 200), mouseX, mouseY);
         }
         int view = innerW;
-        if (this.tabScroll > 0) graphics.fill(innerX, this.tabsY, innerX + 1, this.tabsY + TAB_H, Theme.ACCENT);
-        if (this.tabScroll < this.tabsWidth - view) graphics.fill(innerX + innerW - 1, this.tabsY, innerX + innerW, this.tabsY + TAB_H, Theme.ACCENT);
+        if (this.tabScroll > 0) graphics.fill(innerX, this.tabsY + 2, innerX + 2, this.tabsY + TAB_H - 2, Theme.ACCENT);
+        if (this.tabScroll < this.tabsWidth - view) graphics.fill(innerX + innerW - 2, this.tabsY + 2, innerX + innerW, this.tabsY + TAB_H - 2, Theme.ACCENT);
 
-        // Divider above the settings of the chosen model
-        if (this.optionsPanel != null) graphics.fill(innerX, this.optionsTop - 3, innerX + innerW, this.optionsTop - 2, Theme.BORDER);
-        graphics.fill(x + 1, this.footerY - 5, x + w - 1, this.footerY - 4, Theme.BORDER);
+        // Divider above the settings of the chosen model and footer
+        if (this.optionsPanel != null) graphics.fill(innerX, this.optionsTop - 3, innerX + innerW, this.optionsTop - 2, Theme.BORDER_SUBTLE);
+        graphics.fill(x + 2, this.footerY - 6, x + w - 2, this.footerY - 5, Theme.BORDER_SUBTLE);
 
         // Footer status: the pending choice, progress or an error.
         String text;
         int color;
-        int buttons = this.applyW + 4 + this.cancelW + (this.retryButton.isVisible() ? this.retryW + 4 : 0) + 6;
+        int buttons = this.applyW + 5 + this.cancelW + (this.retryButton.isVisible() ? this.retryW + 5 : 0) + 8;
         if (!this.status.isEmpty()) {
             text = this.status;
             color = this.statusError ? Theme.RED : Theme.MUTED;

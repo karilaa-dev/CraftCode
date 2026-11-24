@@ -8,9 +8,10 @@ import dev.lambdaurora.spruceui.widget.AbstractSpruceWidget;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.util.Mth;
 
-/** Base for custom-drawn vertical lists: wheel scrolling, a draggable thin scrollbar and clipping. */
+/** Base for custom-drawn vertical lists: wheel scrolling, a draggable rounded pill scrollbar and clipping. */
 abstract class ScrollableWidget extends AbstractSpruceWidget {
-    private static final int BAR = 3;
+    private static final int BAR_REST = 3;
+    private static final int BAR_HOT = 4;
 
     protected double scroll;
     private boolean draggingBar;
@@ -57,7 +58,7 @@ abstract class ScrollableWidget extends AbstractSpruceWidget {
     }
 
     private boolean onBar(double mouseX) {
-        return this.maxScroll() > 0 && mouseX >= this.getEndX() - BAR - 3;
+        return this.maxScroll() > 0 && mouseX >= this.getEndX() - BAR_HOT - 4;
     }
 
     @Override
@@ -109,12 +110,19 @@ abstract class ScrollableWidget extends AbstractSpruceWidget {
 
         int max = this.maxScroll();
         if (max > 0) {
-            int track = this.height;
+            int trackInset = 2;
+            int track = Math.max(1, this.height - trackInset * 2);
             int thumb = Math.max(16, track * this.height / Math.max(1, this.contentHeight()));
-            int thumbY = this.getY() + (int) ((track - thumb) * (this.scroll / max));
-            int x = this.getEndX() - BAR - 1;
+            int thumbY = this.getY() + trackInset + (int) ((track - thumb) * (this.scroll / max));
             boolean hot = this.draggingBar || (this.isMouseHovered() && this.onBar(mouseX));
-            graphics.fill(x, thumbY, x + BAR, thumbY + thumb, hot ? Theme.SCROLLBAR_HOT : Theme.SCROLLBAR);
+            int barW = hot ? BAR_HOT : BAR_REST;
+            int x = this.getEndX() - barW - 2;
+            if (hot) {
+                UiShapes.fillRounded(graphics, x, this.getY() + trackInset, barW, track, UiShapes.R_CHIP,
+                        0x20000000 | (Theme.BORDER & 0xFFFFFF));
+            }
+            UiShapes.fillRounded(graphics, x, thumbY, barW, thumb, UiShapes.R_CHIP,
+                    hot ? Theme.SCROLLBAR_HOT : Theme.SCROLLBAR);
             if (hot) graphics.requestCursor(CursorTypes.RESIZE_NS);
         }
     }

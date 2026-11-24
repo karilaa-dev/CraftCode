@@ -37,19 +37,19 @@ import java.util.function.BiFunction;
  * it. Right-click a message to copy its text, or a link to copy its URL.
  */
 final class TranscriptView extends ScrollableWidget {
-    private static final int TURN_GAP = 10;
-    private static final int MESSAGE_GAP = 6;
-    private static final int BLOCK_GAP = 5;
+    private static final int TURN_GAP = 12;
+    private static final int MESSAGE_GAP = 7;
+    private static final int BLOCK_GAP = 6;
     private static final int ITEM_GAP = 2;
-    private static final int DISCLOSURE = 13;
-    private static final int WORK_INDENT = 10;
+    private static final int DISCLOSURE = 17;
+    private static final int WORK_INDENT = 12;
     private static final int TOOL_MAX_LINES = 6;
     private static final int NOTE_MAX_LINES = 14;
-    private static final int SHEET_PAD = 5;
+    private static final int SHEET_PAD = 7;
 
     private enum Variant { FINAL, WORK, TOOL, NOTE, USER }
 
-    private enum OpKind { TEXT, FILL, SHEET, BUBBLE, IMAGE, DISCLOSURE, CARET }
+    private enum OpKind { TEXT, FILL, SHEET, BUBBLE, CODE_BLOCK, IMAGE, DISCLOSURE, CARET }
 
     /** One draw operation; coordinates are relative to the widget's left edge and the content top. */
     private record Op(OpKind kind, int x, int y, int w, int h, @Nullable FormattedCharSequence line, int color,
@@ -254,10 +254,10 @@ final class TranscriptView extends ScrollableWidget {
                         }
                         groupBottom = y;
                     }
-                    // Guide line down the left of the expanded work log.
-                    this.ops.add(new Op(OpKind.FILL, left + 3, top, 1, Math.max(1, y - 4 - top), null, Theme.RULE, null));
+                    // Guide rail down the left of the expanded work log.
+                    this.ops.add(new Op(OpKind.FILL, left + 4, top, 2, Math.max(1, y - 4 - top), null, Theme.RULE, null));
                 }
-                y += 3;
+                y += 4;
             }
             for (var message : turn.shown()) {
                 hasGroup = true;
@@ -269,7 +269,7 @@ final class TranscriptView extends ScrollableWidget {
             }
             if (hasGroup) {
                 int bottom = groupBottom + SHEET_PAD - 1;
-                // One sheet per turn's reply group, inserted under its content.
+                // One continuous rounded sheet per turn's reply group, inserted under its content.
                 this.ops.add(sheetIndex, new Op(OpKind.SHEET, left - SHEET_PAD, groupTop - SHEET_PAD + 1,
                         column + SHEET_PAD * 2, bottom - (groupTop - SHEET_PAD + 1), null, Theme.SHEET, null));
                 y = bottom;
@@ -290,14 +290,14 @@ final class TranscriptView extends ScrollableWidget {
     /** Places a user bubble, right-aligned, and returns the y below it. */
     private int placeUser(ChatMessage message, int left, int column, int y, Map<String, Laid> live) {
         int maxBubble = this.narrow() ? column - 12 : Math.min(column - 24, Math.max(160, column * 4 / 5));
-        var laid = this.laid(message, Variant.USER, maxBubble - 16, live);
-        int w = Math.min(maxBubble, Math.max(laid.contentWidth() + 16, 24));
-        int h = laid.height() + 12;
+        var laid = this.laid(message, Variant.USER, maxBubble - 20, live);
+        int w = Math.min(maxBubble, Math.max(laid.contentWidth() + 20, 28));
+        int h = laid.height() + 14;
         int x = left + column - w;
         this.ops.add(new Op(OpKind.BUBBLE, x, y, w, h, null, Theme.USER_BG, null));
         // Text is left-aligned inside the bubble, images too.
-        for (var op : laid.ops()) this.ops.add(op.moved(x + 8, y + 6));
-        this.addHits(laid, x + 8, y + 6);
+        for (var op : laid.ops()) this.ops.add(op.moved(x + 10, y + 7));
+        this.addHits(laid, x + 10, y + 7);
         this.hits.add(new Hit(HitKind.COPY, x, y, w, h, message.text(), message.id()));
         return y + h;
     }
@@ -459,32 +459,39 @@ final class TranscriptView extends ScrollableWidget {
                 }
                 case QUOTE -> {
                     int top = y;
-                    for (var line : font.split(MessageFormatter.inline(block.spans(), Theme.MUTED, false), width - 8)) {
-                        out.add(new Op(OpKind.TEXT, 8, y, font.width(line), font.lineHeight, line, Theme.MUTED, null));
+                    for (var line : font.split(MessageFormatter.inline(block.spans(), Theme.MUTED, false), width - 10)) {
+                        out.add(new Op(OpKind.TEXT, 10, y, font.width(line), font.lineHeight, line, Theme.MUTED, null));
                         y += lh;
                     }
                     y -= 2;
-                    out.add(new Op(OpKind.FILL, 1, top - 1, 2, Math.max(1, y - top + 2), null, Theme.RULE, null));
+                    out.add(new Op(OpKind.FILL, 1, top - 1, 2, Math.max(1, y - top + 2), null,
+                            Theme.mix(Theme.RULE, Theme.ACCENT, 0.35f), null));
                 }
                 case CODE -> {
                     int top = y;
                     int fillIndex = out.size();
-                    y += 4;
-                    int inner = Math.max(20, width - 10);
-                    if (!block.lang().isEmpty() && width > 80) {
-                        var lang = MessageFormatter.colored(block.lang(), Theme.FAINT).getVisualOrderText();
-                        out.add(new Op(OpKind.TEXT, width - 5 - font.width(lang), y, font.width(lang), font.lineHeight, lang, Theme.FAINT, null));
+                    boolean hasLang = !block.lang().isEmpty() && width > 80;
+                    int headerH = 0;
+                    if (hasLang) {
+                        headerH = font.lineHeight + 5;
+                        var lang = MessageFormatter.colored(block.lang(), Theme.MUTED).getVisualOrderText();
+                        out.add(new Op(OpKind.TEXT, 7, y + 3, font.width(lang), font.lineHeight, lang, Theme.MUTED, null));
+                        y += headerH + 4;
+                    } else {
+                        y += 5;
                     }
+                    int inner = Math.max(20, width - 14);
                     var code = block.code().isEmpty() ? List.of("") : block.code();
                     for (String raw : code) {
                         var split = font.split(MessageFormatter.colored(raw.isEmpty() ? " " : raw, Theme.CODE), inner);
                         for (var line : split) {
-                            out.add(new Op(OpKind.TEXT, 5, y, font.width(line), font.lineHeight, line, Theme.CODE, null));
+                            out.add(new Op(OpKind.TEXT, 7, y, font.width(line), font.lineHeight, line, Theme.CODE, null));
                             y += lh;
                         }
                     }
-                    y += 2;
-                    out.add(fillIndex, new Op(OpKind.FILL, 0, top, width, y - top, null, Theme.CODE_BG, null));
+                    y += 3;
+                    out.add(fillIndex, new Op(OpKind.CODE_BLOCK, 0, top, width, y - top, null, Theme.CODE_BG,
+                            headerH > 0 ? headerH : null));
                 }
                 case RULE -> {
                     out.add(new Op(OpKind.FILL, 0, y + 3, width, 1, null, Theme.RULE, null));
@@ -613,8 +620,15 @@ final class TranscriptView extends ScrollableWidget {
             int y = top + op.y();
             if (y + op.h() < this.getY() || y > this.getEndY()) continue;
             switch (op.kind()) {
-                case SHEET -> Theme.sheet(graphics, x, y, x + op.w(), y + op.h(), Theme.SHEET);
-                case BUBBLE -> Theme.sheet(graphics, x, y, x + op.w(), y + op.h(), Theme.USER_BG);
+                case SHEET -> UiShapes.fillRounded(graphics, x, y, op.w(), op.h(), UiShapes.R_PANEL, Theme.SHEET);
+                case BUBBLE -> UiShapes.panel(graphics, x, y, op.w(), op.h(), UiShapes.R_CONTROL, Theme.USER_BG, Theme.USER_BORDER, true);
+                case CODE_BLOCK -> {
+                    UiShapes.panel(graphics, x, y, op.w(), op.h(), UiShapes.R_CONTROL, Theme.CODE_BG, Theme.CODE_BORDER, false);
+                    if (op.ref() instanceof Integer headerH && headerH > 0 && op.h() > headerH + 2) {
+                        graphics.fill(x + 2, y + 1, x + op.w() - 2, y + headerH, Theme.CODE_HEADER);
+                        graphics.fill(x + 1, y + headerH, x + op.w() - 1, y + headerH + 1, Theme.CODE_BORDER);
+                    }
+                }
                 case FILL -> graphics.fill(x, y, x + op.w(), y + op.h(), op.color());
                 case TEXT -> {
                     if (op.line() != null) graphics.text(font, op.line(), x, y, op.color(), false);
@@ -626,9 +640,10 @@ final class TranscriptView extends ScrollableWidget {
                     if (op.ref() instanceof ChatImage image) {
                         boolean hovered = inside && hoverX >= op.x() && hoverX < op.x() + op.w()
                                 && hoverY >= op.y() && hoverY < op.y() + op.h();
-                        graphics.fill(x, y, x + op.w(), y + op.h(), Theme.CODE_BG);
-                        String status = this.previews.draw(graphics, image, x, y, op.w(), op.h());
-                        Theme.outline(graphics, x, y, op.w(), op.h(), hovered ? Theme.ACCENT : Theme.BORDER);
+                        UiShapes.fillRounded(graphics, x, y, op.w(), op.h(), UiShapes.R_CONTROL, Theme.CODE_BG);
+                        String status = this.previews.draw(graphics, image, x + 1, y + 1, op.w() - 2, op.h() - 2);
+                        UiShapes.outlineRounded(graphics, x, y, op.w(), op.h(), UiShapes.R_CONTROL,
+                                hovered ? Theme.ACCENT : Theme.BORDER);
                         if (hovered) {
                             graphics.requestCursor(CursorTypes.POINTING_HAND);
                             String tip = image.name() + (status.isEmpty() ? "" : "\n" + status) + "\n" + L10n.tr("chat.image.click_to_view", "Click to view");
@@ -656,34 +671,47 @@ final class TranscriptView extends ScrollableWidget {
 
         if (this.copiedKey != null && now - this.copiedAt < 1500) {
             String copied = L10n.tr("chat.transcript.copied", "Copied");
-            int w = font.width(copied) + 8;
-            int x = Math.max(originX + 2, Math.min(originX + this.copiedX - w, this.getEndX() - 8 - w));
+            int w = 7 + 4 + font.width(copied) + 10;
+            int h = font.lineHeight + 6;
+            int x = Math.max(originX + 4, Math.min(originX + this.copiedX - w, this.getEndX() - 10 - w));
             int y = top + this.copiedY + 2;
-            Theme.sheet(graphics, x, y, x + w, y + font.lineHeight + 4, Theme.PANEL);
-            graphics.text(font, copied, x + 4, y + 2, Theme.GREEN, false);
+            UiShapes.dropShadow(graphics, x, y, w, h, UiShapes.R_CONTROL);
+            UiShapes.panel(graphics, x, y, w, h, UiShapes.R_CONTROL, Theme.PANEL, Theme.BORDER_STRONG, true);
+            UiIcons.check(graphics, x + 5, y + (h - 6) / 2, Theme.GREEN);
+            graphics.text(font, copied, x + 15, y + (h - font.lineHeight) / 2 + 1, Theme.GREEN, false);
         }
     }
 
     private void drawDisclosure(SpruceGuiGraphics graphics, Font font, TranscriptTurns.Turn turn, int x, int y, int width,
                                 boolean hovered, long now) {
         boolean open = this.expanded.contains(turn.key());
-        int textY = y + (DISCLOSURE - font.lineHeight) / 2 + 1;
-        int cx = x;
+        String label = TranscriptTurns.workLabel(turn, System.currentTimeMillis());
+        int leadW = (turn.active() ? 9 : 0) + (turn.hasWork() ? 8 : 0);
+        int textMax = Math.max(16, width - 12 - leadW);
+        String shown = Theme.ellipsize(font, label, textMax);
+        int pillW = Math.min(width, 6 + leadW + font.width(shown) + 6);
+        int pillH = DISCLOSURE - 1;
+        int fill = hovered ? Theme.BUTTON_HOVER : open ? Theme.SELECTED : Theme.BUTTON;
+        int border = hovered ? Theme.BORDER_STRONG : open ? Theme.mix(Theme.BORDER, Theme.ACCENT, 0.45f) : Theme.BORDER_SUBTLE;
+        UiShapes.pill(graphics, x, y, pillW, pillH, fill, border);
+
+        int cx = x + 6;
+        int textY = y + (pillH - font.lineHeight) / 2 + 1;
         if (turn.active()) {
-            Theme.dot(graphics, cx + 1, textY + 2, Theme.ACCENT, true);
+            UiIcons.spinner(graphics, cx, y + (pillH - 5) / 2, Theme.ACCENT);
             cx += 9;
         }
-        String label = TranscriptTurns.workLabel(turn, System.currentTimeMillis());
-        if (turn.hasWork()) label = (open ? "▾ " : "▸ ") + label;
-        int color = hovered ? Theme.TEXT : Theme.MUTED;
-        graphics.text(font, Theme.ellipsize(font, label, width - (cx - x)), cx, textY, color, false);
-        if (hovered) {
-            int w = Math.min(width - (cx - x), font.width(label));
-            graphics.fill(cx, textY + font.lineHeight, cx + w, textY + font.lineHeight + 1, Theme.mix(Theme.MUTED, Theme.TEXT, 0.5f));
-            graphics.requestCursor(CursorTypes.POINTING_HAND);
+        if (turn.hasWork()) {
+            int chevColor = hovered || open ? Theme.TEXT : Theme.MUTED;
+            if (open) UiIcons.caretDown(graphics, cx, y + (pillH - 3) / 2, chevColor);
+            else UiIcons.caretRight(graphics, cx + 1, y + (pillH - 5) / 2, chevColor);
+            cx += 8;
         }
+        int color = hovered || open ? Theme.TEXT : Theme.TEXT_SOFT;
+        graphics.text(font, shown, cx, textY, color, false);
+        if (hovered) graphics.requestCursor(CursorTypes.POINTING_HAND);
         if (turn.active() && !open && !this.activePreview.isEmpty()) {
-            graphics.text(font, Theme.ellipsize(font, this.activePreview, width - 10), x + 10, y + DISCLOSURE, Theme.FAINT, false);
+            graphics.text(font, Theme.ellipsize(font, this.activePreview, width - 12), x + 12, y + DISCLOSURE + 1, Theme.FAINT, false);
         }
     }
 
@@ -699,18 +727,23 @@ final class TranscriptView extends ScrollableWidget {
 
     private void drawEmpty(SpruceGuiGraphics graphics, Font font) {
         if (this.emptyLines.isEmpty()) return;
-        int lh = font.lineHeight + 3;
+        int lh = font.lineHeight + 4;
         int maxW = 0;
         for (var line : this.emptyLines) maxW = Math.max(maxW, font.width(line));
-        maxW = Math.min(maxW, this.width - 16);
-        int blockH = this.emptyLines.size() * lh - 3;
+        maxW = Math.min(maxW, this.width - 24);
+        int blockH = this.emptyLines.size() * lh - 4;
         int y = this.getY() + this.height / 2 - blockH / 2;
         int cx = this.getX() + this.width / 2;
-        Theme.sheet(graphics, cx - maxW / 2 - 8, y - 6, cx + maxW / 2 + 8, y + blockH + 5, Theme.SHEET);
+        UiShapes.fillRounded(graphics, cx - maxW / 2 - 12, y - 9, maxW + 24, blockH + 18, UiShapes.R_PANEL, Theme.SHEET);
         boolean first = true;
         for (var line : this.emptyLines) {
             String shown = Theme.ellipsize(font, line, maxW);
-            graphics.text(font, shown, cx - font.width(shown) / 2, y, first ? Theme.MUTED : Theme.FAINT, false);
+            if (first) {
+                var bold = Component.literal(shown).withStyle(s -> s.withBold(true));
+                graphics.text(font, bold, cx - font.width(bold) / 2, y, Theme.TEXT_SOFT, false);
+            } else {
+                graphics.text(font, shown, cx - font.width(shown) / 2, y, Theme.MUTED, false);
+            }
             y += lh;
             first = false;
         }

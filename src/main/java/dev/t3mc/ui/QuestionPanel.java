@@ -15,24 +15,21 @@ import net.minecraft.util.FormattedCharSequence;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Card showing a pending question with its options as chips. Single-select answers on click;
- * multi-select toggles chips and submits them together. The free-text row (if any) is a
- * separate text field the screen places at {@link #freeTextY()}, pinned to the bottom of the card.
- * When the content is taller than the card, the prompt and chips scroll (mouse wheel / scrollbar).
+ * Sculpted amber-accented card showing a pending agent question with rounded interactive option chips.
+ * Single-select answers on click; multi-select toggles chips (with pixel checkmarks) and submits together.
  */
 final class QuestionPanel extends AbstractSpruceWidget {
     interface Actions {
         void answer(PendingQuestion question, List<String> answers);
     }
 
-    static final int FREE_TEXT_ROW = 22;
-    private static final int PAD = 8;
-    private static final int CHIP_H = 16;
+    static final int FREE_TEXT_ROW = 24;
+    private static final int PAD = 9;
+    private static final int CHIP_H = 18;
 
     private record Chip(String label, int x, int y, int w, boolean submit) {}
 
@@ -65,32 +62,33 @@ final class QuestionPanel extends AbstractSpruceWidget {
                 + (total > 1 ? "  ·  " + L10n.tr("chat.question.position", "%1$s of %2$s", index + 1, total) : "");
 
         Font font = Minecraft.getInstance().font;
-        int inner = width - PAD * 2 - 4;
+        int inner = width - PAD * 2 - 5;
         this.promptLines = font.split(MessageFormatter.format(Theme.orDefault(question.prompt(), L10n.tr("chat.question.default_prompt", "The agent needs your input.")), Theme.TEXT), inner);
 
-        int y = PAD + font.lineHeight + 4 + this.promptLines.size() * (font.lineHeight + 2) + 4;
+        int y = PAD + font.lineHeight + 5 + this.promptLines.size() * (font.lineHeight + 2) + 5;
         int x = 0;
         List<String> labels = new ArrayList<>(question.options());
-        if (question.multiSelect() && !labels.isEmpty()) labels.add(""); // the submit chip; its text comes from chipText
+        if (question.multiSelect() && !labels.isEmpty()) labels.add(""); // submit chip
         boolean any = false;
         for (int i = 0; i < labels.size(); i++) {
             String label = labels.get(i);
             boolean submit = question.multiSelect() && i == labels.size() - 1;
-            String shown = Theme.ellipsize(font, chipText(label, submit, false), inner - 12);
-            int w = font.width(shown) + 12 + (question.multiSelect() && !submit ? font.width("✓ ") : 0);
+            int checkSpace = question.multiSelect() && !submit ? 11 : 0;
+            String shown = Theme.ellipsize(font, chipText(label, submit), Math.max(16, inner - 14 - checkSpace));
+            int w = font.width(shown) + 14 + checkSpace;
             w = Math.min(w, inner);
             if (x > 0 && x + w > inner) {
                 x = 0;
-                y += CHIP_H + 4;
+                y += CHIP_H + 5;
             }
             this.chips.add(new Chip(label, x, y, w, submit));
-            x += w + 4;
+            x += w + 5;
             any = true;
         }
-        if (any) y += CHIP_H + 4;
+        if (any) y += CHIP_H + 5;
         this.contentHeight = y;
         this.footer = (question.allowFreeText() ? FREE_TEXT_ROW : 0) + PAD - 4;
-        this.height = Math.max(Math.min(this.contentHeight + this.footer, maxHeight), this.footer + 40);
+        this.height = Math.max(Math.min(this.contentHeight + this.footer, maxHeight), this.footer + 44);
     }
 
     /** Height of the scrolling region (prompt + chips). */
@@ -106,10 +104,9 @@ final class QuestionPanel extends AbstractSpruceWidget {
         return this.maxScroll() > 0;
     }
 
-    private String chipText(String label, boolean submit, boolean selected) {
+    private String chipText(String label, boolean submit) {
         if (submit) return this.selection.isEmpty() ? L10n.tr("chat.question.submit", "Submit")
                 : L10n.tr("chat.question.submit_count", "Submit (%s)", this.selection.size());
-        if (this.question.multiSelect()) return (selected ? "✓ " : "") + label;
         return label;
     }
 
@@ -119,11 +116,11 @@ final class QuestionPanel extends AbstractSpruceWidget {
     }
 
     int innerX() {
-        return this.getX() + PAD + 4;
+        return this.getX() + PAD + 5;
     }
 
     int innerWidth() {
-        return this.width - PAD * 2 - 4;
+        return this.width - PAD * 2 - 5;
     }
 
     private @Nullable Chip chipAt(double mouseX, double mouseY) {
@@ -183,16 +180,16 @@ final class QuestionPanel extends AbstractSpruceWidget {
         var font = this.client.font;
         int x = this.getX();
         int y = this.getY();
-        graphics.fill(x, y, this.getEndX(), this.getEndY(), Theme.AMBER_BG);
-        graphics.fill(x, y, x + 2, this.getEndY(), Theme.AMBER);
-        Theme.outline(graphics, x, y, this.width, this.height, Theme.AMBER_BORDER);
+        UiShapes.panel(graphics, x, y, this.width, this.height, UiShapes.R_PANEL, Theme.AMBER_BG, Theme.AMBER_BORDER, true);
+        UiShapes.accentRail(graphics, x + 2, y + 4, this.height - 8, Theme.AMBER);
 
         int textX = this.innerX();
         int top = y - (int) this.scroll;
         int lineY = top + PAD;
-        graphics.enableScissor(x, y, this.getEndX(), y + this.viewport());
-        graphics.text(font, this.header, textX, lineY, Theme.AMBER, false);
-        lineY += font.lineHeight + 4;
+        graphics.enableScissor(x + 1, y + 1, this.getEndX() - 1, y + this.viewport());
+        UiIcons.diamond(graphics, textX, lineY + 1, Theme.AMBER);
+        graphics.text(font, Component.literal(this.header).withStyle(s -> s.withBold(true)), textX + 9, lineY, Theme.AMBER, false);
+        lineY += font.lineHeight + 5;
         for (var line : this.promptLines) {
             graphics.text(font, line, textX, lineY, Theme.TEXT, false);
             lineY += font.lineHeight + 2;
@@ -206,14 +203,29 @@ final class QuestionPanel extends AbstractSpruceWidget {
             boolean disabled = readOnly || chip.submit() && this.selection.isEmpty();
             boolean hot = chip == hoveredChip && !disabled;
             int bg;
-            if (chip.submit()) bg = disabled ? Theme.BUTTON_DISABLED : hot ? Theme.ACCENT_HOVER : Theme.ACCENT_DIM;
-            else if (selected) bg = hot ? Theme.SELECTED_HOVER : Theme.SELECTED;
-            else bg = hot ? Theme.BUTTON_HOVER : Theme.BUTTON;
-            graphics.fill(cx, cy, cx + chip.w(), cy + CHIP_H, bg);
-            if (selected) Theme.outline(graphics, cx, cy, chip.w(), CHIP_H, Theme.ACCENT);
-            String text = Theme.ellipsize(font, this.chipText(chip.label(), chip.submit(), selected), chip.w() - 12);
-            graphics.text(font, text, cx + (chip.w() - font.width(text)) / 2, cy + (CHIP_H - font.lineHeight) / 2 + 1,
-                    disabled ? Theme.TEXT_DISABLED : chip.submit() ? Theme.ON_ACCENT : Theme.TEXT, false);
+            int border;
+            if (chip.submit()) {
+                bg = disabled ? Theme.BUTTON_DISABLED : hot ? Theme.ACCENT_HOVER : Theme.ACCENT_DIM;
+                border = disabled ? Theme.BORDER_SUBTLE : hot ? Theme.ACCENT : Theme.mix(Theme.ACCENT_DIM, Theme.isLight() ? 0xFF000000 : 0xFFFFFFFF, 0.16f);
+            } else if (selected) {
+                bg = hot ? Theme.SELECTED_HOVER : Theme.SELECTED;
+                border = Theme.ACCENT;
+            } else {
+                bg = hot ? Theme.BUTTON_HOVER : Theme.BUTTON;
+                border = hot ? Theme.BORDER_STRONG : Theme.BORDER;
+            }
+            UiShapes.panel(graphics, cx, cy, chip.w(), CHIP_H, UiShapes.R_CONTROL, bg, border, !disabled);
+            int textColor = disabled ? Theme.TEXT_DISABLED : chip.submit() ? Theme.ON_ACCENT : Theme.TEXT;
+            int checkSpace = selected ? 10 : 0;
+            String text = Theme.ellipsize(font, this.chipText(chip.label(), chip.submit()), chip.w() - 12 - checkSpace);
+            int totalW = checkSpace + font.width(text);
+            int tx = cx + (chip.w() - totalW) / 2;
+            int ty = cy + (CHIP_H - font.lineHeight) / 2 + 1;
+            if (selected) {
+                UiIcons.check(graphics, tx, cy + (CHIP_H - 6) / 2, Theme.ACCENT);
+                tx += checkSpace;
+            }
+            graphics.text(font, text, tx, ty, textColor, false);
             if (hot) graphics.requestCursor(CursorTypes.POINTING_HAND);
         }
         graphics.disableScissor();
@@ -222,16 +234,25 @@ final class QuestionPanel extends AbstractSpruceWidget {
         if (max > 0) {
             int view = this.viewport();
             int thumb = Math.max(12, view * view / Math.max(1, this.contentHeight));
-            int thumbY = y + (int) ((view - thumb) * (this.scroll / max));
-            graphics.fill(this.getEndX() - 5, thumbY + 1, this.getEndX() - 2, thumbY + thumb - 1, Theme.SCROLLBAR_HOT);
+            int thumbY = y + 2 + (int) ((view - 4 - thumb) * (this.scroll / max));
+            UiShapes.fillRounded(graphics, this.getEndX() - 6, thumbY, 3, thumb, UiShapes.R_CHIP, Theme.SCROLLBAR_HOT);
             if (this.scroll < max) {
-                String more = L10n.tr("chat.question.scroll_more", "scroll for more ▾");
-                int mx = this.getEndX() - 10 - font.width(more);
-                int my = y + view - font.lineHeight - 2;
-                graphics.fill(mx - 3, my - 2, this.getEndX() - 7, my + font.lineHeight + 1, Theme.AMBER_BG);
+                String more = stripTrailingCaret(L10n.tr("chat.question.scroll_more", "scroll for more ▾"));
+                int contentW = font.width(more) + 4 + 5;
+                int mx = this.getEndX() - 12 - contentW;
+                int my = y + view - font.lineHeight - 3;
+                UiShapes.pill(graphics, mx - 4, my - 2, contentW + 8, font.lineHeight + 4, Theme.AMBER_BG, Theme.AMBER_BORDER);
                 graphics.text(font, more, mx, my, Theme.AMBER, false);
+                UiIcons.caretDown(graphics, mx + font.width(more) + 4, my + 2, Theme.AMBER);
             }
         }
+    }
+
+    static String stripTrailingCaret(String text) {
+        if (text == null) return "";
+        String s = text.stripTrailing();
+        if (s.endsWith("▾")) return s.substring(0, s.length() - 1).stripTrailing();
+        return text;
     }
 
     @Override

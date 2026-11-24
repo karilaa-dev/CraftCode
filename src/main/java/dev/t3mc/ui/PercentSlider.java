@@ -1,5 +1,6 @@
 package dev.t3mc.ui;
 
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import dev.lambdaurora.spruceui.Position;
 import dev.lambdaurora.spruceui.navigation.NavigationEvent;
 import dev.lambdaurora.spruceui.render.SpruceGuiGraphics;
@@ -10,11 +11,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import java.util.function.IntPredicate;
 
 /**
- * A compact 0–100% slider in fixed steps. Mouse: click or drag along the track. Keyboard: when focused, ←/→ change it
- * by one step and Enter/Space steps up (wrapping to 0 after 100); Tab moves on as usual.
- *
- * <p>{@code onChange} receives each new value and returns false to reject it (for example when it could not be saved);
- * the slider then keeps its previous value.
+ * Precision 0–100% slider in fixed steps with recessed rounded track, filled accent bar and pill thumb.
  */
 final class PercentSlider extends FlatButton {
     private final int step;
@@ -25,7 +22,7 @@ final class PercentSlider extends FlatButton {
         super(position, width, height, "", b -> {});
         this.step = step;
         this.onChange = onChange;
-        this.value = Math.clamp(value, 0, 100); // shown as saved; any change snaps to a step
+        this.value = Math.clamp(value, 0, 100);
         this.setLabel(label(this.value));
     }
 
@@ -55,8 +52,8 @@ final class PercentSlider extends FlatButton {
     }
 
     private void setFromMouse(double mouseX) {
-        int inner = Math.max(1, this.getWidth() - 4);
-        double fraction = (mouseX - this.getX() - 2) / inner;
+        int inner = Math.max(1, this.getWidth() - 12);
+        double fraction = (mouseX - this.getX() - 6) / inner;
         this.set((int) Math.round(Math.clamp(fraction, 0, 1) * 100));
     }
 
@@ -88,14 +85,39 @@ final class PercentSlider extends FlatButton {
 
     @Override
     protected void extractBackground(SpruceGuiGraphics graphics, int mouseX, int mouseY, float delta) {
-        super.extractBackground(graphics, mouseX, mouseY, delta);
-        // Track fill and step ticks inside the button body.
-        int x0 = this.getX() + 2, x1 = this.getEndX() - 2;
-        int bottom = this.getEndY() - 2;
-        int fill = x0 + Math.round((x1 - x0) * this.value / 100f);
-        graphics.fill(x0, bottom - 2, x1, bottom, Theme.BUTTON_DISABLED);
-        if (fill > x0) graphics.fill(x0, bottom - 2, fill, bottom, Theme.ACCENT);
-        int knob = Math.clamp(fill, x0 + 1, x1 - 1);
-        graphics.fill(knob - 1, bottom - 3, knob + 1, bottom, Theme.TEXT);
+        int x = this.getX();
+        int y = this.getY();
+        int w = this.getWidth();
+        int h = this.getHeight();
+        boolean hot = this.isActive() && (this.isMouseHovered() || this.isFocused());
+        if (this.isMouseHovered() && this.isActive()) graphics.requestCursor(CursorTypes.RESIZE_EW);
+
+        UiShapes.fillRounded(graphics, x, y, w, h, UiShapes.R_CONTROL, hot ? Theme.BUTTON_HOVER : Theme.INPUT);
+        UiShapes.outlineRounded(graphics, x, y, w, h, UiShapes.R_CONTROL,
+                this.isFocused() ? Theme.ACCENT : hot ? Theme.BORDER_STRONG : Theme.BORDER);
+
+        // Recessed track at lower half of the control
+        int tx0 = x + 6;
+        int tx1 = x + w - 6;
+        int trackW = Math.max(1, tx1 - tx0);
+        int trackY = y + h - 5;
+        UiShapes.fillRounded(graphics, tx0, trackY, trackW, 3, UiShapes.R_CHIP, Theme.BUTTON_DISABLED);
+        int fillW = Math.round(trackW * this.value / 100f);
+        if (fillW > 0) {
+            UiShapes.fillRounded(graphics, tx0, trackY, Math.max(3, fillW), 3, UiShapes.R_CHIP, Theme.ACCENT);
+        }
+        // Rounded thumb pill
+        int knobX = Math.clamp(tx0 + fillW - 2, tx0, tx1 - 4);
+        UiShapes.fillRounded(graphics, knobX, trackY - 2, 4, 7, UiShapes.R_CHIP, Theme.TEXT);
+        UiShapes.outlineRounded(graphics, knobX, trackY - 2, 4, 7, UiShapes.R_CHIP,
+                hot ? Theme.ACCENT : Theme.BORDER);
+    }
+
+    @Override
+    protected void extractText(SpruceGuiGraphics graphics, int color) {
+        var font = this.client.font;
+        String label = Theme.ellipsize(font, this.getMessage().getString(), this.getWidth() - 10);
+        graphics.text(font, label, this.getX() + (this.getWidth() - font.width(label)) / 2,
+                this.getY() + 2, Theme.TEXT, false);
     }
 }

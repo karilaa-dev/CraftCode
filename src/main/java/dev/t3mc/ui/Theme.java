@@ -21,16 +21,18 @@ final class Theme {
     // TEXT_PLATE / SIDEBAR_PLATE back loose text on them so it stays legible; PANEL_SURFACE is for popups/panels,
     // which stay mostly solid. PANEL remains opaque for controls and cards.
     static int BG, SIDEBAR, TEXT_PLATE, SIDEBAR_PLATE, PANEL_SURFACE, BORDER, PANEL, INPUT, HOVER, SELECTED, SELECTED_HOVER, TEXT, TEXT_SOFT, MUTED, FAINT;
-    static int ACCENT, ACCENT_DIM, ACCENT_HOVER, ON_ACCENT, ASSISTANT, USER_BG, USER_TEXT, USER_LABEL, SYSTEM_BG, CODE;
+    static int ACCENT, ACCENT_DIM, ACCENT_HOVER, ACCENT_PRESSED, ACCENT_SOFT, ON_ACCENT, ASSISTANT, USER_BG, USER_BORDER, USER_TEXT, USER_LABEL, SYSTEM_BG, CODE;
     /** Transcript extras: link ink, fenced-code backing (opaque), thin rules and the work-log guide line. */
-    static int LINK, CODE_BG, RULE;
+    static int LINK, CODE_BG, CODE_BORDER, CODE_HEADER, RULE;
     /**
      * Group surfaces behind readable content (a transcript turn, a sidebar section). Same alpha math as the plates, but
      * drawn once per group as one continuous sheet instead of per line, so there are no bands or stacked layers.
      */
     static int SHEET, SIDEBAR_SHEET;
-    static int GREEN, AMBER, AMBER_BG, AMBER_BORDER, RED, DANGER, DANGER_HOVER;
-    static int BUTTON, BUTTON_HOVER, BUTTON_DISABLED, BUTTON_TEXT, TEXT_DISABLED, SCROLLBAR, SCROLLBAR_HOT;
+    /** Derived surface elevation, hairline border hierarchy, top sheen, depth edge and tinted status pills. */
+    static int SURFACE_RAISED, BORDER_SUBTLE, BORDER_STRONG, HIGHLIGHT_TOP, SHADOW_EDGE;
+    static int GREEN, GREEN_BG, AMBER, AMBER_BG, AMBER_BORDER, RED, RED_BG, ACCENT_BG, DANGER, DANGER_HOVER, DANGER_PRESSED;
+    static int BUTTON, BUTTON_HOVER, BUTTON_PRESSED, BUTTON_DISABLED, SELECTED_PRESSED, BUTTON_TEXT, TEXT_DISABLED, SCROLLBAR, SCROLLBAR_HOT;
     private static int[] BADGES = new int[0];
     private static boolean light;
     private static @Nullable ColorTheme current;
@@ -57,6 +59,16 @@ final class Theme {
         return current == null ? ColorTheme.DEFAULT : current;
     }
 
+    static int composerSurface() {
+        return current() == ColorTheme.DEFAULT ? ColorTheme.EMBER.palette().input() : INPUT;
+    }
+
+    /** Secondary ink over the editor face, including custom palettes with low-contrast muted text. */
+    static int composerSecondaryText() {
+        int surface = composerSurface();
+        return towardContrast(mix(surface, TEXT, 0.70f), TEXT, surface, 4.5);
+    }
+
     static boolean isLight() {
         return light;
     }
@@ -76,11 +88,17 @@ final class Theme {
         panelRgb = panel & 0xFFFFFF;
         surfaces();
         BORDER = opaque(p.border());
+        BORDER_SUBTLE = mix(canvas, BORDER, 0.55f);
+        BORDER_STRONG = mix(BORDER, text, light ? 0.22f : 0.24f);
         PANEL = panel;
+        SURFACE_RAISED = mix(panel, light ? 0xFFFFFFFF : text, light ? 0.35f : 0.05f);
+        HIGHLIGHT_TOP = alpha(0xFFFFFF, light ? 0x60 : 0x16);
+        SHADOW_EDGE = alpha(0x000000, light ? 0x1A : 0x3C);
         INPUT = opaque(p.input());
         HOVER = opaque(p.hover());
         SELECTED = opaque(p.selected());
         SELECTED_HOVER = mix(SELECTED, text, 0.10f);
+        SELECTED_PRESSED = mix(SELECTED, canvas, 0.14f);
         TEXT = text;
         TEXT_SOFT = mix(text, canvas, 0.14f);
         MUTED = opaque(p.muted());
@@ -89,10 +107,14 @@ final class Theme {
         ACCENT = towardContrast(opaque(p.accent()), text, canvas, 3.0);
         ACCENT_DIM = opaque(p.accent());
         ACCENT_HOVER = mix(ACCENT_DIM, ink, 0.14f);
+        ACCENT_PRESSED = mix(ACCENT_DIM, light ? 0xFF000000 : canvas, 0.18f);
+        ACCENT_SOFT = mix(panel, ACCENT_DIM, light ? 0.12f : 0.16f);
+        ACCENT_BG = mix(canvas, ACCENT, light ? 0.12f : 0.18f);
         ON_ACCENT = readable(opaque(p.primaryText()), contrast(0xFFFFFFFF, ACCENT_DIM) >= contrast(0xFF111111, ACCENT_DIM)
                 ? 0xFFFFFFFF : 0xFF111111, ACCENT_DIM, 4.0);
         ASSISTANT = ACCENT;
         USER_BG = opaque(p.userBubble());
+        USER_BORDER = mix(USER_BG, text, light ? 0.14f : 0.12f);
         int bubbleInk = contrast(text, USER_BG) >= contrast(opaque(p.primaryText()), USER_BG) ? text : opaque(p.primaryText());
         USER_TEXT = readable(bubbleInk, luminance(USER_BG) > 0.4 ? 0xFF111111 : 0xFFFFFFFF, USER_BG, 4.5);
         USER_LABEL = readable(ACCENT, mix(USER_TEXT, USER_BG, 0.3f), USER_BG, 3.0);
@@ -100,19 +122,25 @@ final class Theme {
         int linkInk = light ? 0xFF1758A1 : 0xFF8DCDFF;
         LINK = towardContrast(towardContrast(linkInk, text, canvas, 4.5), USER_TEXT, USER_BG, 4.5);
         CODE_BG = mix(canvas, panel, light ? 0.55f : 0.75f);
+        CODE_BORDER = mix(CODE_BG, BORDER, 0.78f);
+        CODE_HEADER = mix(CODE_BG, panel, light ? 0.50f : 0.45f);
         RULE = mix(canvas, opaque(p.border()), 0.85f);
 
         GREEN = light ? 0xFF16803C : 0xFF6FD08C;
+        GREEN_BG = mix(canvas, GREEN, light ? 0.12f : 0.16f);
         AMBER = light ? 0xFFA85F00 : 0xFFF2C14E;
         RED = light ? 0xFFC62828 : 0xFFF08A80;
+        RED_BG = mix(canvas, RED, light ? 0.12f : 0.18f);
         CODE = light ? 0xFF1F7A3A : 0xFFB9D99A;
         AMBER_BG = mix(panel, AMBER, 0.12f);
         AMBER_BORDER = mix(panel, AMBER, 0.35f);
         DANGER = mix(panel, RED, light ? 0.18f : 0.24f);
         DANGER_HOVER = mix(panel, RED, light ? 0.28f : 0.36f);
+        DANGER_PRESSED = mix(panel, RED, light ? 0.34f : 0.44f);
 
-        BUTTON = mix(panel, text, light ? 0.07f : 0.08f);
-        BUTTON_HOVER = mix(panel, text, light ? 0.14f : 0.16f);
+        BUTTON = mix(panel, text, light ? 0.06f : 0.07f);
+        BUTTON_HOVER = mix(panel, text, light ? 0.13f : 0.15f);
+        BUTTON_PRESSED = mix(panel, canvas, light ? 0.06f : 0.18f);
         BUTTON_DISABLED = mix(canvas, panel, 0.5f);
         BUTTON_TEXT = text;
         TEXT_DISABLED = mix(MUTED, canvas, 0.45f);
@@ -173,7 +201,9 @@ final class Theme {
      * Draw it right before the text; it is a no-op while the backdrop already provides enough contrast.
      */
     static void plate(SpruceGuiGraphics graphics, int x, int y, int width, int lineHeight, int plate) {
-        if (width > 0) fillPlate(graphics, x - 2, y - 1, x + width + 2, y + lineHeight, plate);
+        if (width > 0 && (plate >>> 24) != 0) {
+            UiShapes.fillRounded(graphics, x - 3, y - 2, width + 6, lineHeight + 3, UiShapes.R_CHIP, plate);
+        }
     }
 
     /** Fills a whole row/area with {@code plate}; a no-op while the backdrop is opaque enough on its own. */
@@ -182,17 +212,11 @@ final class Theme {
     }
 
     /**
-     * Fills one coherent group surface (rect with 1px softened corners) in three non-overlapping strips, so a translucent
+     * Fills one coherent group surface (rounded rect) in non-overlapping horizontal strips, so a translucent
      * color is never layered over itself. A no-op for fully transparent colors (the backdrop already gives contrast).
      */
     static void sheet(SpruceGuiGraphics graphics, int x0, int y0, int x1, int y1, int color) {
-        if ((color >>> 24) == 0 || x1 - x0 < 3 || y1 - y0 < 3) {
-            if ((color >>> 24) != 0 && x1 > x0 && y1 > y0) graphics.fill(x0, y0, x1, y1, color);
-            return;
-        }
-        graphics.fill(x0 + 1, y0, x1 - 1, y0 + 1, color);
-        graphics.fill(x0, y0 + 1, x1, y1 - 1, color);
-        graphics.fill(x0 + 1, y1 - 1, x1 - 1, y1, color);
+        UiShapes.fillRounded(graphics, x0, y0, x1 - x0, y1 - y0, UiShapes.R_CONTROL, color);
     }
 
     private static int alpha(int rgb, int a) {
@@ -275,6 +299,16 @@ final class Theme {
             case COMPLETED -> GREEN;
             case ERROR -> RED;
             case IDLE -> FAINT;
+        };
+    }
+
+    static int statusBg(ThreadStatus status) {
+        return switch (status) {
+            case RUNNING -> ACCENT_BG;
+            case WAITING_FOR_INPUT -> AMBER_BG;
+            case COMPLETED -> GREEN_BG;
+            case ERROR -> RED_BG;
+            case IDLE -> PANEL;
         };
     }
 

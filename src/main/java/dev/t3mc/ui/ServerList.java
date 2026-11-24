@@ -26,13 +26,13 @@ import java.util.Locale;
  * the row the primary action opens; a separate accent bar marks where the workspace points right now.
  */
 final class ServerList extends ScrollableWidget {
-    static final int SERVER_H = 24;
-    static final int SERVER_SINGLE_H = 18;
-    static final int MACHINE_H = 17;
-    static final int NOTE_H = 13;
-    private static final int PAD = 2;
-    private static final int CHEVRON_W = 14;
-    private static final int CHILD_INDENT = 14;
+    static final int SERVER_H = 26;
+    static final int SERVER_SINGLE_H = 20;
+    static final int MACHINE_H = 19;
+    static final int NOTE_H = 15;
+    private static final int PAD = 3;
+    private static final int CHEVRON_W = 15;
+    private static final int CHILD_INDENT = 15;
 
     sealed interface Row permits Server, Machine, Note {
         String key();
@@ -310,26 +310,26 @@ final class ServerList extends ScrollableWidget {
         }
     }
 
-    /** Row backdrop: cursor → selected fill, hover → hover fill; a focus ring when the list has keyboard focus. */
+    /** Row backdrop: cursor → selected rounded fill, hover → hover fill; rounded focus ring when focused. */
     private void backdrop(SpruceGuiGraphics graphics, int x0, int x1, int y, int h, boolean hovered, boolean selected) {
         int bg = selected ? (hovered ? Theme.SELECTED_HOVER : Theme.SELECTED) : hovered ? Theme.HOVER : 0;
-        if (bg != 0) graphics.fill(x0, y, x1, y + h, bg);
-        if (selected && this.isFocused()) Theme.outline(graphics, x0, y, x1 - x0, h, Theme.ACCENT);
+        if (bg != 0) UiShapes.fillRounded(graphics, x0, y, x1 - x0, h - 1, UiShapes.R_CONTROL, bg);
+        if (selected && this.isFocused()) UiShapes.outlineRounded(graphics, x0, y, x1 - x0, h - 1, UiShapes.R_CONTROL, Theme.ACCENT);
     }
 
     private void currentBar(SpruceGuiGraphics graphics, int x, int y, int h) {
-        graphics.fill(x, y + 2, x + 2, y + h - 2, Theme.ACCENT);
+        UiShapes.accentRail(graphics, x, y + 3, h - 7, Theme.ACCENT);
     }
 
     /** Draws a right-aligned "● Status" pair and returns its left edge; drops the words when room is tight. */
-    private int status(SpruceGuiGraphics graphics, Font font, String label, int color, boolean pulse, int right, int textY,
+    private int status(SpruceGuiGraphics graphics, Font font, String label, int color, ConnectionState state, int right, int textY,
                        int room) {
-        boolean words = room >= statusWidth + 70;
+        boolean words = room >= statusWidth + 72;
         int x = words ? right - statusWidth : right;
         if (words) graphics.text(font, Theme.ellipsize(font, label, statusWidth), x, textY,
                 color == Theme.FAINT ? Theme.MUTED : Theme.TEXT_SOFT, false);
-        Theme.dot(graphics, x - 8, textY + 2, color, pulse);
-        return x - 12;
+        UiIcons.connectionMark(graphics, x - 9, textY + 1, state, color);
+        return x - 13;
     }
 
     private void drawServer(SpruceGuiGraphics graphics, Server s, int left, int right, int y, int h, boolean hovered,
@@ -337,16 +337,18 @@ final class ServerList extends ScrollableWidget {
         var font = this.client.font;
         this.backdrop(graphics, left, right, y, h, hovered, selected);
         if (s.current()) this.currentBar(graphics, left, y, h);
-        int nameY = s.host().isEmpty() ? y + (h - font.lineHeight) / 2 + 1 : y + 4;
+        int nameY = s.host().isEmpty() ? y + (h - 1 - font.lineHeight) / 2 + 1 : y + 4;
         if (s.expandable()) {
             boolean chevHot = hovered && mouseX < left + CHEVRON_W + 2;
-            if (chevHot) graphics.fill(left + 3, nameY - 2, left + CHEVRON_W, nameY + font.lineHeight, Theme.BUTTON_HOVER);
-            graphics.text(font, s.expanded() ? "▾" : "▸", left + 6, nameY, chevHot ? Theme.TEXT : Theme.MUTED, false);
+            if (chevHot) UiShapes.pill(graphics, left + 3, nameY - 2, CHEVRON_W - 2, font.lineHeight + 3, Theme.BUTTON_HOVER, Theme.BORDER_SUBTLE);
+            int cc = chevHot ? Theme.TEXT : Theme.MUTED;
+            if (s.expanded()) UiIcons.caretDown(graphics, left + 7, nameY + 2, cc);
+            else UiIcons.caretRight(graphics, left + 8, nameY + 1, cc);
         }
-        int x = left + CHEVRON_W + 2;
+        int x = left + CHEVRON_W + 3;
         var p = s.profile();
         int statusLeft = this.status(graphics, font, serverStatus(p), Theme.connectionColor(p.state()),
-                p.state() == ConnectionState.CONNECTING, right - 6, nameY, right - x);
+                p.state(), right - 7, nameY, right - x);
         boolean dim = p.state() == ConnectionState.DISCONNECTED && !s.current();
         int available = statusLeft - x - 4;
         String shown = font.getSplitter().plainHeadByWidth(s.title(), Math.max(0, available), SERVER_NAME);
@@ -355,14 +357,14 @@ final class ServerList extends ScrollableWidget {
         graphics.text(font, Component.literal(shown).setStyle(SERVER_NAME), x, nameY,
                 dim ? Theme.TEXT_SOFT : Theme.TEXT, false);
         if (!s.host().isEmpty())
-            graphics.text(font, Theme.ellipsize(font, s.host(), right - 6 - x), x, y + 14, Theme.MUTED, false);
-        if (hovered && (!shown.equals(s.title()) || font.width(s.host()) > right - 6 - x))
+            graphics.text(font, Theme.ellipsize(font, s.host(), right - 7 - x), x, y + 15, Theme.MUTED, false);
+        if (hovered && (!shown.equals(s.title()) || font.width(s.host()) > right - 7 - x))
             tooltip(graphics, s.title() + "\n" + p.endpoint(), mouseX, mouseY);
     }
 
     /** Tree connector: a vertical rule down from the parent's chevron and an elbow into this row. */
     private void connector(SpruceGuiGraphics graphics, int left, int y, int h, boolean last) {
-        int cx = left + 8;
+        int cx = left + 9;
         int mid = y + h / 2;
         graphics.fill(cx, y, cx + 1, last ? mid + 1 : y + h, Theme.BORDER);
         graphics.fill(cx + 1, mid, cx + CHILD_INDENT - 2, mid + 1, Theme.BORDER);
@@ -375,20 +377,23 @@ final class ServerList extends ScrollableWidget {
         this.connector(graphics, left, y, h, m.last());
         this.backdrop(graphics, x0, right, y, h, hovered, selected);
         if (m.current()) this.currentBar(graphics, x0, y, h);
-        int textY = y + (h - font.lineHeight) / 2 + 1;
-        int x = x0 + 6;
+        int textY = y + (h - 1 - font.lineHeight) / 2 + 1;
+        int x = x0 + 7;
         var link = m.link();
-        int statusLeft = this.status(graphics, font, machineStatus(link), machineColor(link), false, right - 6, textY,
+        int mColor = machineColor(link);
+        ConnectionState mState = link.reachable() ? ConnectionState.CONNECTED
+                : mColor == Theme.RED ? ConnectionState.ERROR : ConnectionState.DISCONNECTED;
+        int statusLeft = this.status(graphics, font, machineStatus(link), mColor, mState, right - 7, textY,
                 right - x);
         String access = accessLabel(link);
-        int nameRight = statusLeft - 4;
-        if (!access.isEmpty() && nameRight - x > font.width(access) + 50) {
-            int aw = font.width(access) + 6;
+        int nameRight = statusLeft - 5;
+        if (!access.isEmpty() && nameRight - x > font.width(access) + 52) {
+            int aw = font.width(access) + 8;
             int ax = nameRight - aw;
             boolean ro = link.readOnly();
-            Theme.outline(graphics, ax, y + 3, aw, h - 6, ro ? Theme.AMBER_BORDER : Theme.BORDER);
-            graphics.text(font, access, ax + 3, textY, ro ? Theme.AMBER : Theme.MUTED, false);
-            nameRight = ax - 5;
+            UiShapes.pill(graphics, ax, y + 3, aw, h - 7, ro ? Theme.AMBER_BG : Theme.BUTTON, ro ? Theme.AMBER_BORDER : Theme.BORDER);
+            graphics.text(font, access, ax + 4, textY, ro ? Theme.AMBER : Theme.MUTED, false);
+            nameRight = ax - 6;
         }
         int ink = !m.openable() ? Theme.MUTED : selected || hovered || m.current() ? Theme.TEXT : Theme.TEXT_SOFT;
         String shown = Theme.ellipsize(font, link.label(), nameRight - x);

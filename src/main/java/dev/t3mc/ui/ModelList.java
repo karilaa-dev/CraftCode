@@ -15,14 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Grouped, scrollable list of models for the picker: provider headers, model rows with a favorite
- * star, a check on the model the thread uses now and a highlight on the player's pending choice.
+ * Grouped, scrollable list of models for the picker: provider headers with count pills, rounded model rows with pixel
+ * favorite stars, pixel checkmark on the model in use and accent rail on the player's pending choice.
  */
 final class ModelList extends ScrollableWidget {
-    static final int HEADER_H = 15;
-    static final int ROW_H = 20;
-    static final int NOTE_H = 16;
-    private static final int STAR_W = 14;
+    static final int HEADER_H = 17;
+    static final int ROW_H = 22;
+    static final int NOTE_H = 17;
+    private static final int STAR_W = 16;
 
     sealed interface Row permits Header, Item, Note {}
 
@@ -79,7 +79,6 @@ final class ModelList extends ScrollableWidget {
             y += height(row);
         }
         this.contentHeight = y + 2;
-        // Keep the same model highlighted across refreshes when it is still listed.
         this.highlight = -1;
         if (previous != null) {
             for (int s = 0; s < this.selectable.size(); s++) {
@@ -146,7 +145,6 @@ final class ModelList extends ScrollableWidget {
         if (this.highlight < 0) return;
         int index = this.selectable.get(this.highlight);
         int top = this.rowTops.get(index);
-        // Show the group header above the first row of a group too.
         if (index > 0 && this.rows.get(index - 1) instanceof Header) top = this.rowTops.get(index - 1);
         int bottom = this.rowTops.get(index) + ROW_H;
         if (top < this.scroll) this.setScroll(top);
@@ -174,7 +172,7 @@ final class ModelList extends ScrollableWidget {
             var item = (Item) this.rows.get(index);
             this.highlight = s;
             this.playDownSound();
-            if (!item.typed() && mouseX < this.getX() + 4 + STAR_W + 2) this.actions.toggleFavorite(item);
+            if (!item.typed() && mouseX < this.getX() + 4 + STAR_W + 4) this.actions.toggleFavorite(item);
             else this.actions.pick(item, this.doubleClick);
             return true;
         }
@@ -185,7 +183,7 @@ final class ModelList extends ScrollableWidget {
     protected void drawContent(SpruceGuiGraphics graphics, int top, int mouseX, int mouseY) {
         var font = this.client.font;
         int left = this.getX() + 4;
-        int right = this.getEndX() - 7;
+        int right = this.getEndX() - 8;
         boolean inside = this.isMouseHovered();
         var highlighted = this.highlighted();
 
@@ -196,12 +194,22 @@ final class ModelList extends ScrollableWidget {
             if (y + h < this.getY() || y > this.getEndY()) continue;
             switch (row) {
                 case Header header -> {
-                    int ty = y + h - font.lineHeight - 1;
+                    int ty = y + h - font.lineHeight - 2;
                     String detail = header.detail();
-                    int dw = detail.isEmpty() ? 0 : font.width(detail);
-                    graphics.text(font, Theme.ellipsize(font, header.text().toUpperCase(java.util.Locale.ROOT),
-                            right - left - 6 - (dw == 0 ? 0 : dw + 6)), left + 4, ty, Theme.MUTED, false);
-                    if (dw > 0) graphics.text(font, detail, right - dw - 2, ty, Theme.FAINT, false);
+                    int dw = detail.isEmpty() ? 0 : font.width(detail) + 6;
+                    String text = header.text();
+                    int tx = left + 4;
+                    if (text.startsWith("★")) {
+                        UiIcons.star(graphics, tx, ty, Theme.AMBER, true);
+                        tx += 10;
+                        text = text.substring(1).stripLeading();
+                    }
+                    graphics.text(font, Theme.ellipsize(font, text, right - tx - 4 - (dw == 0 ? 0 : dw + 6)),
+                            tx, ty, Theme.MUTED, false);
+                    if (dw > 0) {
+                        UiShapes.pill(graphics, right - dw - 1, ty - 1, dw, font.lineHeight + 2, Theme.BUTTON, 0);
+                        graphics.text(font, detail, right - dw + 2, ty, Theme.FAINT, false);
+                    }
                 }
                 case Note note -> graphics.text(font, Theme.ellipsize(font, note.text(), right - left - 8), left + 4,
                         y + (h - font.lineHeight) / 2 + 1, note.error() ? Theme.RED : Theme.FAINT, false);
@@ -217,37 +225,42 @@ final class ModelList extends ScrollableWidget {
         boolean hovered = inside && mouseY >= y && mouseY < y + ROW_H && mouseX >= left && mouseX < right;
         boolean draft = !item.typed() && this.marks.isDraft(pid, item.modelId());
         boolean current = !item.typed() && this.marks.isCurrent(pid, item.modelId());
+        int rowH = ROW_H - 1;
         int bg = draft ? (hovered ? Theme.SELECTED_HOVER : Theme.SELECTED) : hovered || keyboard ? Theme.HOVER : 0;
-        if (bg != 0) graphics.fill(left, y, right, y + ROW_H, bg);
-        if (draft) graphics.fill(left, y, left + 2, y + ROW_H, Theme.ACCENT);
-        if (keyboard) Theme.outline(graphics, left, y, right - left, ROW_H, Theme.isLight() ? Theme.BORDER : Theme.SCROLLBAR);
+        if (bg != 0) UiShapes.fillRounded(graphics, left, y, right - left, rowH, UiShapes.R_CONTROL, bg);
+        if (draft) UiShapes.accentRail(graphics, left, y + 3, rowH - 6, Theme.ACCENT);
+        if (keyboard) {
+            UiShapes.outlineRounded(graphics, left, y, right - left, rowH, UiShapes.R_CONTROL,
+                    draft ? Theme.ACCENT : Theme.BORDER_STRONG);
+        }
         if (hovered) graphics.requestCursor(CursorTypes.POINTING_HAND);
-        int textY = y + (ROW_H - font.lineHeight) / 2 + 1;
+        int textY = y + (rowH - font.lineHeight) / 2 + 1;
 
-        int x = left + 4;
+        int x = left + 5;
         if (item.typed()) {
-            graphics.text(font, "+", x + 3, textY, Theme.ACCENT, false);
+            UiIcons.plus(graphics, x + 3, y + (rowH - 7) / 2, Theme.ACCENT);
         } else {
             boolean favorite = this.marks.isFavorite(pid, item.modelId());
-            boolean starHot = hovered && mouseX < left + 4 + STAR_W + 2;
+            boolean starHot = hovered && mouseX < left + 4 + STAR_W + 4;
             int starColor = favorite ? Theme.AMBER : starHot ? Theme.TEXT_SOFT : Theme.FAINT;
-            if (starHot) graphics.fill(x - 1, y + 3, x + STAR_W - 1, y + ROW_H - 3, Theme.BUTTON_HOVER);
-            graphics.text(font, favorite ? "★" : "☆", x + 2, textY, starColor, false);
+            if (starHot) {
+                UiShapes.pill(graphics, x, y + 3, STAR_W - 2, rowH - 6, Theme.BUTTON_HOVER, Theme.BORDER_SUBTLE);
+            }
+            UiIcons.star(graphics, x + (STAR_W - 2 - 7) / 2, y + (rowH - 7) / 2, starColor, favorite);
         }
-        x += STAR_W + 4;
+        x += STAR_W + 3;
 
-        // Right side: check for the model in use, then provider (icon or name) or ID.
-        int rx = right - 4;
+        // Right side: crisp pixel check for the model in use, then provider (icon or name) or ID.
+        int rx = right - 6;
         if (current) {
-            int cw = font.width("✓");
-            graphics.text(font, "✓", rx - cw, textY, Theme.GREEN, false);
-            rx -= cw + 6;
+            UiIcons.check(graphics, rx - 7, y + (rowH - 6) / 2, Theme.GREEN);
+            rx -= 13;
         }
         @Nullable ProviderIcon icon = item.showProvider() && !item.typed() ? this.marks.icon(pid) : null;
         if (icon != null && rx - x <= ProviderIcon.SIZE + 30) icon = null;
         if (icon != null) {
             int ix = rx - ProviderIcon.SIZE;
-            int iy = y + (ROW_H - ProviderIcon.SIZE) / 2;
+            int iy = y + (rowH - ProviderIcon.SIZE) / 2;
             icon.draw(graphics, ix, iy, false);
             if (hovered && mouseX >= ix && mouseX < rx && mouseY >= iy && mouseY < iy + ProviderIcon.SIZE) {
                 graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(item.provider().label()), 200),

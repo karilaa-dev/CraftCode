@@ -40,11 +40,14 @@ import java.util.concurrent.ExecutionException;
  * Polls {@link ClientController#snapshot()} every tick and re-renders when its version changes.
  */
 public class WorkspaceScreen extends SpruceScreen {
-    private static final int HEADER = 32;
-    private static final int COMPOSER_H = 46;
-    private static final int SEND_ROW = 16;
-    private static final int GAP = 6;
-    private static final int ATTACH_GAP = 3;
+    private static final int HEADER = 36;
+    private static final int COMPOSER_H = 34;
+    private static final int SEND_ROW = 18;
+    private static final int DOCK_PAD = 5;
+    private static final int TOOLBAR_GAP = 6;
+    private static final int GAP = 8;
+    private static final int ATTACH_GAP = 4;
+    private static final int SIDEBAR_FOOT = 32;
 
     private final ClientController controller;
     private final @Nullable Screen parent;
@@ -160,17 +163,17 @@ public class WorkspaceScreen extends SpruceScreen {
         this.syncImageGeneration(this.snapshot);
         var snap = this.snapshot;
         var detail = snap.selectedThread();
-        this.sidebarWidth = Math.clamp(this.width * 26 / 100, 130, 200);
+        this.sidebarWidth = Math.clamp(this.width * 27 / 100, 142, 214);
         int sw = this.sidebarWidth;
         int mainX = sw + 1;
         int mainW = this.width - mainX;
-        int pad = 12;
+        int pad = mainW < 260 ? 8 : 14;
 
         // Sidebar
         Theme.sync(snap.settings());
         Theme.setTransparency(snap.settings().transparency());
         String searchLabel = L10n.tr("sidebar.search", "Search");
-        this.search = this.addRenderableWidget(new InputField(Position.of(6, 21), sw - 12, searchLabel, searchLabel));
+        this.search = this.addRenderableWidget(new InputField(Position.of(8, 24), sw - 16, 19, searchLabel, searchLabel).searchable());
         search.setText(filtering || pickingProject ? projectQuery : query);
         search.setChangedListener(text -> {
             if (filtering || pickingProject) projectQuery = text;
@@ -182,8 +185,8 @@ public class WorkspaceScreen extends SpruceScreen {
             picker.setScroll(0);
             refreshSidebar();
         });
-        int filterW = (sw - 16) / 2;
-        this.filterButton = this.addRenderableWidget(new FlatButton(Position.of(6, 42), filterW, 17,
+        int filterW = (sw - 20) / 2;
+        this.filterButton = this.addRenderableWidget(new FlatButton(Position.of(8, 47), filterW, 19,
                 L10n.tr("sidebar.filter", "Filter projects"), b -> {
                     filtering = !filtering;
                     pickingProject = false;
@@ -191,11 +194,13 @@ public class WorkspaceScreen extends SpruceScreen {
                     search.setText(filtering ? projectQuery : query);
                     picker.setScroll(0);
                     refreshSidebar();
-                }));
-        this.newThreadButton = this.addRenderableWidget(new FlatButton(Position.of(10 + filterW, 42), sw - 16 - filterW, 17,
-                L10n.tr("chat.thread.new", "+  New thread"), FlatButton.Kind.PRIMARY, b -> this.togglePicker()));
-        int listH = this.height - 63 - 30;
-        this.sidebar = this.addRenderableWidget(new SidebarList(Position.of(0, 63), sw, listH, new SidebarList.Actions() {
+                }).withIcon(FlatButton.Icon.FILTER));
+        this.newThreadButton = this.addRenderableWidget(new FlatButton(Position.of(12 + filterW, 47), sw - 20 - filterW, 19,
+                stripLeadingPlus(L10n.tr("chat.thread.new", "+  New thread")), FlatButton.Kind.PRIMARY, b -> this.togglePicker())
+                .withIcon(FlatButton.Icon.PLUS));
+        int listTop = 70;
+        int listH = Math.max(20, this.height - listTop - SIDEBAR_FOOT);
+        this.sidebar = this.addRenderableWidget(new SidebarList(Position.of(0, listTop), sw, listH, new SidebarList.Actions() {
             @Override
             public void selectThread(WorkspaceProject project, String threadId) {
                 controller.openThread(project.source(), threadId);
@@ -232,12 +237,13 @@ public class WorkspaceScreen extends SpruceScreen {
             }
         }));
         this.sidebar.setScroll(this.sidebarScroll);
-        this.picker = this.addRenderableWidget(new ProjectPicker(Position.of(0, 63), sw, listH, this::pickProject));
-        this.addRenderableWidget(new FlatButton(Position.of(6, this.height - 24), sw - 12, 18,
-                L10n.tr("chat.workspace.settings", "Settings"), b -> this.minecraft.gui.setScreen(new ConnectionsScreen(this, controller))));
+        this.picker = this.addRenderableWidget(new ProjectPicker(Position.of(0, listTop), sw, listH, this::pickProject));
+        this.addRenderableWidget(new FlatButton(Position.of(8, this.height - 26), sw - 16, 20,
+                L10n.tr("chat.workspace.settings", "Settings"), b -> this.minecraft.gui.setScreen(new ConnectionsScreen(this, controller)))
+                .withIcon(FlatButton.Icon.SETTINGS));
 
-        int connectW = Math.max(64, Math.max(this.font.width(reconnectLabel()), this.font.width(connectLabel())) + 10);
-        this.connectButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - connectW, 8), connectW, 16,
+        int connectW = Math.max(66, Math.max(this.font.width(reconnectLabel()), this.font.width(connectLabel())) + 16);
+        this.connectButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - connectW, 9), connectW, 18,
                 reconnectLabel(),
                 b -> {
                     // A saved T3 URL reconnects (reusing its login or signing in again); without one, open Settings.
@@ -245,34 +251,34 @@ public class WorkspaceScreen extends SpruceScreen {
                     else this.minecraft.gui.setScreen(new ConnectionsScreen(this, this.controller));
                 }));
 
-        // Composer
-        int inset = 5;
-        int sendRowY = this.height - 12 - inset - SEND_ROW;
-        if (snap.drafting()) sendRowY = Math.min(sendRowY, (this.height + HEADER + COMPOSER_H) / 2 + 16);
-        composerBottom = sendRowY + SEND_ROW + inset;
+        // Unified sculpted composer dock
+        int dockLeft = mainX + pad;
+        int dockW = mainW - pad * 2;
+        int sendRowY = this.height - 12 - DOCK_PAD - SEND_ROW;
+        if (snap.drafting()) sendRowY = Math.min(sendRowY, (this.height + HEADER + COMPOSER_H) / 2 + 18);
+        composerBottom = sendRowY + SEND_ROW + DOCK_PAD;
         String threadId = detail == null ? null : detail.id();
         boolean hasImages = !this.images(threadId).isEmpty();
-        int stripY = sendRowY - 6 - AttachmentStrip.HEIGHT;
-        int composerY = (hasImages ? stripY - ATTACH_GAP : sendRowY - 6) - COMPOSER_H;
-        this.composer = this.addRenderableWidget(new ComposerArea(Position.of(mainX + pad + inset, composerY + inset), mainW - (pad + inset) * 2, COMPOSER_H - inset * 2,
+        int stripY = sendRowY - TOOLBAR_GAP - AttachmentStrip.HEIGHT;
+        int composerY = (hasImages ? stripY - ATTACH_GAP : sendRowY - TOOLBAR_GAP) - COMPOSER_H;
+        this.composer = this.addRenderableWidget(new ComposerArea(Position.of(dockLeft + DOCK_PAD, composerY + DOCK_PAD),
+                dockW - DOCK_PAD * 2, COMPOSER_H - DOCK_PAD * 2,
                 L10n.tr("chat.composer.placeholder", "Ask anything…"), this::send));
         this.composer.setText(threadId == null ? "" : this.composerDrafts.getOrDefault(threadId, ""));
         this.composer.setCursorToEnd();
         this.attachmentStrip = null;
         if (hasImages) {
-            this.attachmentStrip = this.addRenderableWidget(new AttachmentStrip(Position.of(mainX + pad, stripY), mainW - pad * 2,
-                    this.previews, this::removeImage));
+            this.attachmentStrip = this.addRenderableWidget(new AttachmentStrip(Position.of(dockLeft + DOCK_PAD, stripY),
+                    dockW - DOCK_PAD * 2, this.previews, this::removeImage));
         }
-        int sendW = Math.max(mainW < 240 ? 32 : 60, Math.min(mainW / 4, Math.max(this.font.width(stopLabel()), Math.max(this.font.width(sendLabel()), this.font.width(sendingLabel()))) + 10));
-        this.sendButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - inset - sendW, sendRowY), sendW, SEND_ROW,
-                sendLabel(), FlatButton.Kind.PRIMARY, b -> this.pressComposerButton()));
-        boolean roomy = mainW - pad * 2 >= 240;
-        String attachLabel = roomy ? L10n.tr("chat.composer.attach", "+ Image") : L10n.tr("chat.composer.attach_short", "Image");
-        int attachW = Math.max(roomy ? 48 : 36, this.font.width(attachLabel) + 10);
-        this.attachButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - inset - sendW - 4 - attachW, sendRowY),
-                attachW, SEND_ROW, attachLabel, b -> this.chooseImages()));
-        int chipMax = Math.max(16, Math.min(240, mainW - (pad + inset) * 2 - sendW - attachW - 10));
-        this.modelButton = this.addRenderableWidget(new ModelChip(Position.of(mainX + pad + inset, sendRowY), chipMax, SEND_ROW,
+        int actionX = dockLeft + dockW - DOCK_PAD - SEND_ROW;
+        this.sendButton = this.addRenderableWidget(new ComposerAction(Position.of(actionX, sendRowY), SEND_ROW,
+                sendLabel(), FlatButton.Icon.SEND, b -> this.pressComposerButton()));
+        this.attachButton = this.addRenderableWidget(new ComposerAction(Position.of(dockLeft + DOCK_PAD, sendRowY), SEND_ROW,
+                L10n.tr("chat.composer.attach_short", "Image"), FlatButton.Icon.IMAGE, b -> this.chooseImages()));
+        int modelRight = actionX - 4;
+        int chipMax = Math.clamp(modelRight - this.attachButton.getEndX() - 6, 1, 240);
+        this.modelButton = this.addRenderableWidget(new ModelChip(modelRight, sendRowY, chipMax, SEND_ROW,
                 b -> this.openModelPicker()));
 
         // Pending question
@@ -285,8 +291,8 @@ public class WorkspaceScreen extends SpruceScreen {
             var question = pending.getFirst();
             var selection = this.multiSelections.computeIfAbsent(question.requestId(), k -> new LinkedHashSet<>());
             // Leave the transcript at least a few lines; the card scrolls internally when it is taller.
-            int maxHeight = Math.max(70, (composerY - HEADER - GAP) * 3 / 5);
-            var panel = new QuestionPanel(Position.of(mainX + pad, 0), mainW - pad * 2, maxHeight,
+            int maxHeight = Math.max(74, (composerY - HEADER - GAP) * 3 / 5);
+            var panel = new QuestionPanel(Position.of(dockLeft, 0), dockW, maxHeight,
                     question, 0, pending.size(), selection, this::answer);
             int panelY = composerY - GAP - panel.getHeight();
             panel.getPosition().setRelativeY(panelY);
@@ -295,8 +301,8 @@ public class WorkspaceScreen extends SpruceScreen {
 
             if (question.allowFreeText()) {
                 String replyLabel = L10n.tr("chat.question.reply", "Reply");
-                int replyW = Math.max(54, this.font.width(replyLabel) + 10);
-                var field = new InputField(Position.of(panel.innerX(), panel.freeTextY()), panel.innerWidth() - replyW - 4,
+                int replyW = Math.max(58, this.font.width(replyLabel) + 16);
+                var field = new InputField(Position.of(panel.innerX(), panel.freeTextY()), panel.innerWidth() - replyW - 5, 19,
                         L10n.tr("chat.question.answer", "Answer"), question.multiSelect()
                         ? L10n.tr("chat.question.other_placeholder", "Other (optional)…")
                         : L10n.tr("chat.question.answer_placeholder", "Type an answer…"));
@@ -305,7 +311,7 @@ public class WorkspaceScreen extends SpruceScreen {
                 field.onEnter(() -> this.submitFreeText(question));
                 this.answerField = this.addRenderableWidget(field);
                 this.replyButton = this.addRenderableWidget(new FlatButton(Position.of(panel.innerX() + panel.innerWidth() - replyW, panel.freeTextY()),
-                        replyW, 18, replyLabel, FlatButton.Kind.PRIMARY, b -> this.submitFreeText(question)));
+                        replyW, 19, replyLabel, FlatButton.Kind.PRIMARY, b -> this.submitFreeText(question)));
             }
         }
 
@@ -527,7 +533,14 @@ public class WorkspaceScreen extends SpruceScreen {
     }
 
     int[] modelAnchor() {
-        return new int[] {this.modelButton.getX(), this.composer.getY()};
+        return new int[] {this.modelButton.getX() - DOCK_PAD, this.composer.getY() - DOCK_PAD};
+    }
+
+    static String stripLeadingPlus(String text) {
+        if (text == null) return "";
+        String s = text.stripLeading();
+        if (s.startsWith("+")) return s.substring(1).stripLeading();
+        return text;
     }
 
     boolean isSending(String threadId) {
@@ -577,10 +590,21 @@ public class WorkspaceScreen extends SpruceScreen {
         this.picker.setProjects(choices, projectFilter, filtering);
         this.sidebar.setVisible(!pickingProject && !filtering);
         this.picker.setVisible(pickingProject || filtering);
+        boolean filterActive = filtering || projectFilter != null;
         filterButton.setLabel(projectFilter == null ? L10n.tr("sidebar.filter_short", "Filter") : filtered.getFirst().name());
-        filterButton.setKind(filtering || projectFilter != null ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL);
-        if (pickingProject) this.newThreadButton.setLabel(L10n.tr("chat.picker.cancel", "Cancel"));
-        else this.newThreadButton.setLabel(L10n.tr("chat.thread.new", "+  New thread"), L10n.tr("chat.thread.new_short", "+  New"));
+        filterButton.setKind(filterActive ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL);
+        filterButton.setIcon(filterActive ? FlatButton.Icon.FILTER_ACTIVE : FlatButton.Icon.FILTER);
+        if (pickingProject) {
+            this.newThreadButton.setLabel(L10n.tr("chat.picker.cancel", "Cancel"));
+            this.newThreadButton.setIcon(FlatButton.Icon.NONE);
+            this.newThreadButton.setKind(FlatButton.Kind.NORMAL);
+        } else {
+            this.newThreadButton.setLabel(
+                    stripLeadingPlus(L10n.tr("chat.thread.new", "+  New thread")),
+                    stripLeadingPlus(L10n.tr("chat.thread.new_short", "+  New")));
+            this.newThreadButton.setIcon(FlatButton.Icon.PLUS);
+            this.newThreadButton.setKind(FlatButton.Kind.PRIMARY);
+        }
     }
 
     private void togglePicker() {
@@ -641,7 +665,7 @@ public class WorkspaceScreen extends SpruceScreen {
         boolean stop = !content && !sending && detail != null && detail.status() == ThreadStatus.RUNNING;
         String label = sending ? sendingLabel() : stop ? stopLabel() : sendLabel();
         if (!this.sendButton.getMessage().getString().equals(label)) this.sendButton.setLabel(label);
-        this.sendButton.setKind(stop ? FlatButton.Kind.DANGER : FlatButton.Kind.PRIMARY);
+        this.sendButton.setIcon(sending ? FlatButton.Icon.NONE : stop ? FlatButton.Icon.STOP : FlatButton.Icon.SEND);
         this.sendButton.setActive(this.composer.isActive() && (content || stop)
                 && !this.attaching(detail.id()) && !this.models.applying(detail.id()));
     }
@@ -993,7 +1017,7 @@ public class WorkspaceScreen extends SpruceScreen {
         graphics.fill(this.sidebarWidth + 1, 0, this.width, this.height, Theme.BG);
         graphics.fill(this.sidebarWidth, 0, this.sidebarWidth + 1, this.height, Theme.BORDER);
         graphics.fill(this.sidebarWidth + 1, HEADER, this.width, HEADER + 1, Theme.BORDER);
-        graphics.fill(0, this.height - 30, this.sidebarWidth, this.height - 29, Theme.BORDER);
+        graphics.fill(0, this.height - SIDEBAR_FOOT, this.sidebarWidth, this.height - SIDEBAR_FOOT + 1, Theme.BORDER_SUBTLE);
     }
 
     @Override
@@ -1007,44 +1031,65 @@ public class WorkspaceScreen extends SpruceScreen {
         int online = servers.online(), total = servers.total();
         var state = online > 0 ? ConnectionState.CONNECTED : connection.state();
         boolean partial = online < total;
-        String status = Theme.connectionLabel(state) + (partial ? "  " + online + "/" + total : "");
-        Theme.fillPlate(graphics, 0, 0, sw, 20, Theme.SIDEBAR_SHEET);
+        int connColor = partial && online > 0 ? Theme.AMBER : Theme.connectionColor(state);
+        Theme.fillPlate(graphics, 0, 0, sw, 22, Theme.SIDEBAR_SHEET);
         Theme.fillPlate(graphics, sw + 1, 0, this.width, HEADER, Theme.SHEET);
-        Theme.dot(graphics, 8, 9, partial && online > 0 ? Theme.AMBER : Theme.connectionColor(state),
-                state == ConnectionState.CONNECTING);
-        graphics.text(font, Theme.ellipsize(font, status, sw - 24), 16, 7, Theme.MUTED, false);
-        if (mouseX < sw && mouseY < 20 && !connection.message().isBlank()) {
+        UiIcons.connectionMark(graphics, 9, 9, state, connColor);
+        int badgeW = 0;
+        if (partial && total > 0) {
+            String ratio = online + "/" + total;
+            badgeW = font.width(ratio) + 8;
+            int bx = sw - 8 - badgeW;
+            UiShapes.pill(graphics, bx, 6, badgeW, 12, Theme.BUTTON, Theme.BORDER_SUBTLE);
+            graphics.text(font, ratio, bx + 4, 8, Theme.MUTED, false);
+        }
+        String status = Theme.connectionLabel(state);
+        graphics.text(font, Theme.ellipsize(font, status, sw - 26 - (badgeW > 0 ? badgeW + 6 : 0)), 18, 8, Theme.TEXT_SOFT, false);
+        if (mouseX < sw && mouseY < 22 && !connection.message().isBlank()) {
             graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(connection.message()), 220), mouseX, mouseY);
         }
 
-        // Main header: thread title, status and project
-        int mainX = sw + 1 + 12;
-        int rightLimit = this.width - 12 - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 6 : 0);
+        // Main header: thread title, project breadcrumb, and right-aligned status pill
+        int pad = (this.width - (sw + 1)) < 260 ? 8 : 14;
+        int mainX = sw + 1 + pad;
+        int rightLimit = this.width - pad - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 8 : 0);
         var detail = snap.selectedThread();
         if (detail != null) {
+            // Draw compact status pill on the right when not drafting
+            if (!snap.drafting() && detail.status() != ThreadStatus.IDLE) {
+                String statusLabel = Theme.statusLabel(detail.status());
+                int pillW = 6 + 5 + 4 + font.width(statusLabel) + 6;
+                if (rightLimit - mainX > pillW + 60) {
+                    int pillX = rightLimit - pillW;
+                    int pillY = (HEADER - 16) / 2;
+                    int stColor = Theme.statusColor(detail.status());
+                    UiShapes.pill(graphics, pillX, pillY, pillW, 16, Theme.statusBg(detail.status()),
+                            Theme.mix(Theme.BORDER, stColor, 0.45f));
+                    UiIcons.threadStatus(graphics, pillX + 5, pillY + 5, detail.status());
+                    graphics.text(font, statusLabel, pillX + 14, pillY + (16 - font.lineHeight) / 2 + 1, stColor, false);
+                    rightLimit = pillX - 8;
+                }
+            }
             var owner = servers.activeProfile();
             String icon = owner == null ? "" : owner.display(servers.environmentId()).icon();
             if (!icon.isEmpty()) {
-                graphics.text(font, icon, mainX, 7, Theme.ACCENT, false);
-                mainX += font.width(icon) + 4;
+                mainX += UiIcons.drawConnectionGlyph(graphics, font, icon, mainX, 7, Theme.ACCENT) + 5;
             }
             String title = Theme.ellipsize(font, Theme.orDefault(detail.title(), L10n.tr("chat.thread.untitled", "New thread")), rightLimit - mainX);
             var titleText = Component.literal(title).withStyle(s -> s.withBold(true));
             var project = snap.project(detail.projectId());
             String source = ConnectionsScreen.activeName(servers);
             String name = project == null ? "" : Theme.orDefault(project.name(), project.path());
-            String sub = source + (name.isBlank() || name.equals(source) ? "" : "  ·  " + name);
-            if (!snap.drafting()) sub += "  ·  " + Theme.statusLabel(detail.status());
-            sub = Theme.ellipsize(font, sub, rightLimit - mainX - 8);
+            String sub = source + (name.isBlank() || name.equals(source) ? "" : "  /  " + name);
+            sub = Theme.ellipsize(font, sub, rightLimit - mainX);
             graphics.text(font, titleText, mainX, 7, Theme.TEXT, false);
-            Theme.dot(graphics, mainX, 20, Theme.statusColor(detail.status()), detail.status() == ThreadStatus.RUNNING);
-            graphics.text(font, sub, mainX + 8, 19, Theme.MUTED, false);
+            graphics.text(font, sub, mainX, 20, Theme.MUTED, false);
         } else {
             var none = Component.literal(L10n.tr("chat.workspace.no_thread", "No thread selected")).withStyle(s -> s.withBold(true));
-            graphics.text(font, none, mainX, 12, Theme.MUTED, false);
+            graphics.text(font, none, mainX, (HEADER - font.lineHeight) / 2 + 1, Theme.MUTED, false);
         }
 
-        // Composer hint row
+        // Unified sculpted composer dock & hint row
         if (this.composer != null) {
             String hint = "";
             String hintDetail = null;
@@ -1083,26 +1128,30 @@ public class WorkspaceScreen extends SpruceScreen {
                 hint = snap.connection().state() == ConnectionState.CONNECTED ? L10n.tr("chat.hint.select_thread", "Select a thread to start typing")
                         : L10n.tr("chat.empty.not_connected", "Not connected");
             }
-            int hintY = this.sendButton.getY() + (SEND_ROW - font.lineHeight) / 2 + 1;
-            int hintX = this.modelButton.getEndX() + 8;
-            int hintEnd = this.attachButton.getX() - 6;
-            String hintText = Theme.ellipsize(font, hint, hintEnd - hintX);
-            if (hintDetail == null && !hintText.equals(hint)) hintDetail = hint; // truncated (narrow window or long translation)
-            int left = composer.getX() - 5, right = composer.getEndX() + 5, top = composer.getY() - 5;
-            Theme.fillPlate(graphics, left, top, right, composerBottom, Theme.SHEET);
-            graphics.fill(left, top, right, composer.getEndY() + 5, Theme.INPUT);
-            Theme.outline(graphics, left, top, right - left, composer.getHeight() + 10,
-                    composer.isFocused() ? Theme.ACCENT : Theme.BORDER);
+            int dockLeft = composer.getX() - DOCK_PAD;
+            int dockRight = composer.getEndX() + DOCK_PAD;
+            int dockTop = composer.getY() - DOCK_PAD;
+            int dockW = dockRight - dockLeft;
+            int dockH = composerBottom - dockTop;
+            UiShapes.roundSurface(graphics, dockLeft, dockTop, dockW, dockH, 7, Theme.composerSurface());
+
             if (snap.drafting() && detail != null) {
                 var project = snap.project(detail.projectId());
                 String prompt = detail.projectId().isEmpty() ? L10n.tr("chat.draft.scratch_prompt", "What should we build?")
                         : L10n.tr("chat.draft.prompt", "What should we build in %s?",
                         project == null ? detail.projectId() : Theme.orDefault(project.name(), project.path()));
-                String line = Theme.ellipsize(font, prompt, right - left);
-                int x = (left + right - font.width(line)) / 2;
-                Theme.plate(graphics, x, top - 17, font.width(line), font.lineHeight, Theme.TEXT_PLATE);
-                graphics.text(font, line, x, top - 17, Theme.TEXT, false);
+                String line = Theme.ellipsize(font, prompt, dockW);
+                var styled = Component.literal(line).withStyle(s -> s.withBold(true));
+                int x = dockLeft + (dockW - font.width(styled)) / 2;
+                int py = dockTop - 20;
+                Theme.plate(graphics, x, py, font.width(styled), font.lineHeight, Theme.TEXT_PLATE);
+                graphics.text(font, styled, x, py, Theme.TEXT, false);
             }
+            int hintY = this.sendButton.getY() + (SEND_ROW - font.lineHeight) / 2 + 1;
+            int hintX = this.attachButton.getEndX() + 6;
+            int hintEnd = this.modelButton.getX() - 4;
+            String hintText = Theme.ellipsize(font, hint, hintEnd - hintX);
+            if (hintDetail == null && !hintText.equals(hint)) hintDetail = hint;
             graphics.text(font, hintText, hintX, hintY, hintColor, false);
             if (hintDetail != null && mouseX >= hintX && mouseX < hintEnd && mouseY >= hintY - 4 && mouseY < hintY + font.lineHeight + 4) {
                 graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(hintDetail), 240), mouseX, mouseY);
@@ -1112,6 +1161,9 @@ public class WorkspaceScreen extends SpruceScreen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
 
         if (this.attachmentStrip != null) this.attachmentStrip.extractHoverCard(graphics, mouseX, mouseY, this.width);
+        if (this.sendButton != null && this.sendButton.isMouseHovered()) {
+            graphics.vanilla().setTooltipForNextFrame(font, this.sendButton.getMessage(), mouseX, mouseY);
+        }
         if (this.attachButton != null && this.attachButton.isMouseHovered()) {
             String blocked = this.choosing != null ? L10n.tr("chat.file.dialog_open", "The file dialog is open.") : this.attachBlocker();
             String tip = blocked != null ? blocked

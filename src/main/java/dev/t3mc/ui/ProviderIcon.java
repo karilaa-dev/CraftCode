@@ -16,7 +16,7 @@ enum ProviderIcon {
     ANTIGRAVITY("antigravity"),
     CURSOR("cursor");
 
-    static final int SIZE = 12;
+    static final int SIZE = 10;
     private static final Identifier CODEX_COLOR = Identifier.fromNamespaceAndPath("t3mc", "provider_icons/codex_color");
     private final Identifier texture;
 

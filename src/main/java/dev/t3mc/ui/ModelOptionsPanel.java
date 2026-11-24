@@ -17,16 +17,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Settings of the chosen model as labeled rows of chips: Effort first, then Speed, then every other
- * option the model declares, each with exactly the values T3 Code lists, in its order. The chip in
- * effect for the pending choice is highlighted (accent outline when set explicitly, plain when it is the
- * advertised default); "•" marks the value the thread uses now. Clicking the explicit value again, or the
- * row's "Reset", returns the option to the provider default; "Reset all" clears every override.
+ * Settings of the chosen model as labeled rows of compact rounded chips: Effort first, then Speed, then every other
+ * option the model declares. Explicitly set options show a crisp accent border; a small green/accent dot marks the
+ * value currently in use.
  */
 final class ModelOptionsPanel extends ScrollableWidget {
-    static final int CHIP_H = 14;
-    private static final int LABEL_H = 12;
-    private static final int GAP = 3;
+    static final int CHIP_H = 16;
+    private static final int LABEL_H = 13;
+    private static final int GAP = 4;
 
     private static String resetText() {
         return L10n.tr("model.options.reset", "Reset");
@@ -42,7 +40,7 @@ final class ModelOptionsPanel extends ScrollableWidget {
         void resetOptions();
     }
 
-    private record Chip(ModelOption option, Object value, String text, int x, int y, int w) {}
+    private record Chip(ModelOption option, Object value, String text, boolean inUse, int x, int y, int w) {}
 
     private record Label(ModelOption option, int y) {}
 
@@ -112,13 +110,15 @@ final class ModelOptionsPanel extends ScrollableWidget {
             int x = 0;
             var values = ModelFormat.choices(option, this.driverKind);
             for (Object value : values) {
-                String text = this.chipText(option, value);
-                int w = Math.min(inner, font.width(text) + 10);
+                boolean inUse = this.current != null && ModelFormat.valueEquals(ModelFormat.effective(option, this.current), value);
+                String text = ModelFormat.valueLabel(option, value);
+                int dotSpace = inUse ? 6 : 0;
+                int w = Math.min(inner, font.width(text) + 12 + dotSpace);
                 if (x > 0 && x + w > inner) {
                     x = 0;
                     y += CHIP_H + GAP;
                 }
-                this.chips.add(new Chip(option, value, text, x, y, w));
+                this.chips.add(new Chip(option, value, text, inUse, x, y, w));
                 x += w + GAP;
             }
             if (!values.isEmpty()) y += CHIP_H + GAP;
@@ -132,11 +132,6 @@ final class ModelOptionsPanel extends ScrollableWidget {
         this.contentHeight = y;
     }
 
-    private String chipText(ModelOption option, Object value) {
-        boolean inUse = this.current != null && ModelFormat.valueEquals(ModelFormat.effective(option, this.current), value);
-        return (inUse ? "• " : "") + ModelFormat.valueLabel(option, value);
-    }
-
     private boolean anyOverride() {
         for (var option : this.options) if (ModelFormat.overridden(option, this.chosen)) return true;
         return false;
@@ -147,8 +142,6 @@ final class ModelOptionsPanel extends ScrollableWidget {
         return this.contentHeight;
     }
 
-    // A queued frame may draw after the window shrinks and the whole lower panel is offscreen.
-    // Submit the visible option rows directly so the renderer never receives an empty scissor.
     @Override
     protected boolean usesScissor() { return false; }
 
@@ -158,7 +151,7 @@ final class ModelOptionsPanel extends ScrollableWidget {
     }
 
     private int right() {
-        return this.getEndX() - 7;
+        return this.getEndX() - 8;
     }
 
     private @Nullable Chip chipAt(double mouseX, double contentY) {
@@ -174,7 +167,7 @@ final class ModelOptionsPanel extends ScrollableWidget {
     /** The overridden option whose "Reset" link is under the mouse. */
     private @Nullable ModelOption resetAt(double mouseX, double contentY) {
         int w = this.client.font.width(resetText());
-        if (mouseX < this.right() - w - 2 || mouseX >= this.right() + 2) return null;
+        if (mouseX < this.right() - w - 4 || mouseX >= this.right() + 2) return null;
         for (var label : this.labels) {
             if (contentY >= label.y() && contentY < label.y() + LABEL_H - 1
                     && this.visibleRow(label.y(), LABEL_H)
@@ -186,7 +179,7 @@ final class ModelOptionsPanel extends ScrollableWidget {
     private boolean onResetAll(double mouseX, double contentY) {
         int w = this.client.font.width(resetAllText());
         return this.header && this.visibleRow(2, LABEL_H) && this.anyOverride() && contentY >= 2 && contentY < 2 + LABEL_H - 1
-                && mouseX >= this.right() - w - 2 && mouseX < this.right() + 2;
+                && mouseX >= this.right() - w - 4 && mouseX < this.right() + 2;
     }
 
     @Override
@@ -227,6 +220,10 @@ final class ModelOptionsPanel extends ScrollableWidget {
             boolean any = this.anyOverride();
             String text = any ? resetAllText() : L10n.tr("model.options.provider_defaults", "Provider defaults");
             boolean hot = any && hover && this.onResetAll(mouseX, contentY);
+            if (hot) {
+                int tw = font.width(text);
+                UiShapes.pill(graphics, right - tw - 3, y, tw + 6, font.lineHeight + 2, Theme.BUTTON_HOVER, 0);
+            }
             graphics.text(font, text, right - font.width(text), y + 1,
                     !any ? Theme.FAINT : hot ? Theme.TEXT : Theme.ACCENT, false);
             if (hot) graphics.requestCursor(CursorTypes.POINTING_HAND);
@@ -244,9 +241,10 @@ final class ModelOptionsPanel extends ScrollableWidget {
                 boolean hot = option == hotReset;
                 String reset = resetText();
                 int rw = font.width(reset);
+                if (hot) UiShapes.pill(graphics, right - rw - 3, y, rw + 6, font.lineHeight + 2, Theme.BUTTON_HOVER, 0);
                 graphics.text(font, reset, right - rw, y + 1, !this.enabled ? Theme.TEXT_DISABLED : hot ? Theme.TEXT : Theme.ACCENT, false);
                 if (hot) graphics.requestCursor(CursorTypes.POINTING_HAND);
-                limit = right - rw - 8;
+                limit = right - rw - 10;
             }
             String name = Theme.ellipsize(font, ModelFormat.optionName(option), limit - left);
             graphics.text(font, name, left, y + 1, kind == ModelFormat.Kind.OTHER ? Theme.MUTED : Theme.TEXT, false);
@@ -274,10 +272,20 @@ final class ModelOptionsPanel extends ScrollableWidget {
             int bg = !this.enabled ? Theme.BUTTON_DISABLED
                     : selected ? (hot ? Theme.SELECTED_HOVER : Theme.SELECTED)
                     : hot ? Theme.BUTTON_HOVER : Theme.BUTTON;
-            graphics.fill(cx, cy, cx + chip.w(), cy + CHIP_H, bg);
-            if (selected) Theme.outline(graphics, cx, cy, chip.w(), CHIP_H, this.enabled && explicit ? Theme.ACCENT : Theme.BORDER);
-            String text = Theme.ellipsize(font, chip.text(), chip.w() - 6);
-            graphics.text(font, text, cx + (chip.w() - font.width(text)) / 2, cy + (CHIP_H - font.lineHeight) / 2 + 1,
+            int border = !this.enabled ? Theme.BORDER_SUBTLE
+                    : selected ? (explicit ? Theme.ACCENT : Theme.BORDER_STRONG)
+                    : hot ? Theme.BORDER_STRONG : Theme.BORDER_SUBTLE;
+            UiShapes.pill(graphics, cx, cy, chip.w(), CHIP_H, bg, border);
+            int dotSpace = chip.inUse() ? 6 : 0;
+            String text = Theme.ellipsize(font, chip.text(), chip.w() - 10 - dotSpace);
+            int totalW = dotSpace + font.width(text);
+            int tx = cx + (chip.w() - totalW) / 2;
+            if (chip.inUse()) {
+                int dy = cy + (CHIP_H - 3) / 2;
+                graphics.fill(tx, dy, tx + 3, dy + 3, !this.enabled ? Theme.TEXT_DISABLED : Theme.GREEN);
+                tx += dotSpace;
+            }
+            graphics.text(font, text, tx, cy + (CHIP_H - font.lineHeight) / 2 + 1,
                     !this.enabled ? Theme.TEXT_DISABLED : selected ? Theme.TEXT : Theme.TEXT_SOFT, false);
             if (hot) graphics.requestCursor(CursorTypes.POINTING_HAND);
         }

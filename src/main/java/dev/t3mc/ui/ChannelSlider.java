@@ -1,6 +1,7 @@
 package dev.t3mc.ui;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import dev.lambdaurora.spruceui.Position;
 import dev.lambdaurora.spruceui.navigation.NavigationEvent;
 import dev.lambdaurora.spruceui.render.SpruceGuiGraphics;
@@ -12,8 +13,7 @@ import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
 /**
- * One 0–255 RGB channel of the color being edited. Mouse: click, drag or scroll. Keyboard: ←/→ step by 1,
- * Shift+←/→ and Page Up/Down by 16, Home/End jump to 0/255. The track shows the color across the channel's range.
+ * One 0–255 RGB channel slider with a rounded shell, full-spectrum gradient track and tactile pill thumb.
  */
 final class ChannelSlider extends FlatButton {
     private static final int COARSE = 16;
@@ -54,8 +54,8 @@ final class ChannelSlider extends FlatButton {
     }
 
     private void setFromMouse(double mouseX) {
-        int inner = Math.max(1, this.getWidth() - 4);
-        double fraction = (mouseX - this.getX() - 2) / inner;
+        int inner = Math.max(1, this.getWidth() - 12);
+        double fraction = (mouseX - this.getX() - 6) / inner;
         this.set((int) Math.round(Math.clamp(fraction, 0, 1) * 255));
     }
 
@@ -112,18 +112,38 @@ final class ChannelSlider extends FlatButton {
 
     @Override
     protected void extractBackground(SpruceGuiGraphics graphics, int mouseX, int mouseY, float delta) {
-        super.extractBackground(graphics, mouseX, mouseY, delta);
-        // Gradient track: the edited color with this channel swept from 0 to 255.
-        int x0 = this.getX() + 2, x1 = this.getEndX() - 2;
-        int bottom = this.getEndY() - 2;
+        int x = this.getX();
+        int y = this.getY();
+        int w = this.getWidth();
+        int h = this.getHeight();
+        boolean hot = this.isActive() && (this.isMouseHovered() || this.isFocused());
+        if (this.isMouseHovered() && this.isActive()) graphics.requestCursor(CursorTypes.RESIZE_EW);
+
+        UiShapes.fillRounded(graphics, x, y, w, h, UiShapes.R_CONTROL, hot ? Theme.BUTTON_HOVER : Theme.INPUT);
+        UiShapes.outlineRounded(graphics, x, y, w, h, UiShapes.R_CONTROL,
+                this.isFocused() ? Theme.ACCENT : hot ? Theme.BORDER_STRONG : Theme.BORDER);
+
+        // Gradient spectrum bar
+        int x0 = x + 6;
+        int x1 = x + w - 6;
+        int trackY = y + h - 5;
         int base = this.color.getAsInt();
         int span = Math.max(1, x1 - x0);
-        for (int x = x0; x < x1; x += 2) {
-            int v = Math.round(255f * (x - x0) / span);
-            graphics.fill(x, bottom - 2, Math.min(x + 2, x1), bottom, HexColor.withChannel(base, this.channel, v));
+        for (int px = x0; px < x1; px += 2) {
+            int v = Math.round(255f * (px - x0) / span);
+            graphics.fill(px, trackY, Math.min(px + 2, x1), trackY + 3, HexColor.withChannel(base, this.channel, v));
         }
-        int knob = x0 + Math.round(span * this.value / 255f);
-        knob = Math.clamp(knob, x0 + 1, x1 - 1);
-        graphics.fill(knob - 1, bottom - 4, knob + 1, bottom + 1, Theme.TEXT);
+        int knobX = Math.clamp(x0 + Math.round(span * this.value / 255f) - 2, x0, x1 - 4);
+        UiShapes.fillRounded(graphics, knobX, trackY - 2, 4, 7, UiShapes.R_CHIP, Theme.TEXT);
+        UiShapes.outlineRounded(graphics, knobX, trackY - 2, 4, 7, UiShapes.R_CHIP,
+                hot ? Theme.ACCENT : Theme.BORDER);
+    }
+
+    @Override
+    protected void extractText(SpruceGuiGraphics graphics, int color) {
+        var font = this.client.font;
+        String val = Integer.toString(this.value);
+        graphics.text(font, this.name, this.getX() + 6, this.getY() + 2, Theme.MUTED, false);
+        graphics.text(font, val, this.getEndX() - 6 - font.width(val), this.getY() + 2, Theme.TEXT, false);
     }
 }

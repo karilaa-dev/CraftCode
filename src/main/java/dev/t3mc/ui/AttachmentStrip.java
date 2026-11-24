@@ -18,16 +18,15 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * One row of chips for the images staged in the composer: thumbnail (PNG/JPEG) or type tag, file name and a
- * "×" that removes it. Scrolls horizontally with the mouse wheel when the chips don't fit. With keyboard
- * focus, ←/→ pick a chip and Delete/Backspace removes it. Hovering a chip shows a larger preview card,
- * drawn by the screen via {@link #extractHoverCard}.
+ * One row of rounded chips for the images staged in the composer: thumbnail (PNG/JPEG) or type frame, file name and a
+ * pixel "×" that removes it. Scrolls horizontally with the mouse wheel when chips overflow. Hovering shows an elevated
+ * preview card drawn via {@link #extractHoverCard}.
  */
 final class AttachmentStrip extends AbstractSpruceWidget {
-    static final int HEIGHT = 14;
-    private static final int THUMB = 10;
-    private static final int CLOSE_W = 10;
-    private static final int GAP = 3;
+    static final int HEIGHT = 17;
+    private static final int THUMB = 11;
+    private static final int CLOSE_W = 13;
+    private static final int GAP = 4;
     private static final int MAX_NAME_W = 96;
 
     private record Chip(LocalImage image, String label, int x, int w) {}
@@ -55,7 +54,7 @@ final class AttachmentStrip extends AbstractSpruceWidget {
         int x = 0;
         for (var image : images) {
             String label = Theme.ellipsize(font, image.name(), MAX_NAME_W);
-            int w = 2 + THUMB + 3 + font.width(label) + 3 + CLOSE_W;
+            int w = 4 + THUMB + 4 + font.width(label) + 4 + CLOSE_W;
             this.chips.add(new Chip(image, label, x, w));
             x += w + GAP;
         }
@@ -137,8 +136,6 @@ final class AttachmentStrip extends AbstractSpruceWidget {
         int x0 = this.getX() - (int) this.scroll;
         int y = this.getY();
         var hovered = this.isMouseHovered() ? this.chipAt(mouseX, mouseY) : null;
-        // Chips fit vertically by construction. Clip horizontal overflow without restricting the
-        // bottom row's Y, since Minecraft may submit a frame extracted before the window shrank.
         boolean clipHorizontally = this.contentWidth > this.width;
         if (clipHorizontally) graphics.enableScissor(this.getX(), 0, this.getEndX(), this.getEndY());
         for (int i = 0; i < this.chips.size(); i++) {
@@ -146,10 +143,11 @@ final class AttachmentStrip extends AbstractSpruceWidget {
             int cx = x0 + chip.x();
             boolean hot = chip == hovered;
             boolean focused = this.isFocused() && i == this.selected;
-            graphics.fill(cx, y, cx + chip.w(), y + HEIGHT, hot ? Theme.BUTTON_HOVER : Theme.BUTTON);
-            if (focused) Theme.outline(graphics, cx, y, chip.w(), HEIGHT, Theme.ACCENT);
+            UiShapes.pill(graphics, cx, y, chip.w(), HEIGHT,
+                    hot ? Theme.BUTTON_HOVER : Theme.BUTTON,
+                    focused ? Theme.ACCENT : hot ? Theme.BORDER_STRONG : Theme.BORDER);
 
-            int tx = cx + 2, ty = y + (HEIGHT - THUMB) / 2;
+            int tx = cx + 3, ty = y + (HEIGHT - THUMB) / 2;
             var thumb = this.previews.thumb(chip.image());
             if (thumb != null) {
                 int dw = Math.max(1, thumb.width() * THUMB / Math.max(thumb.width(), thumb.height()));
@@ -157,30 +155,29 @@ final class AttachmentStrip extends AbstractSpruceWidget {
                 graphics.vanilla().blit(RenderPipelines.GUI_TEXTURED, thumb.texture(), tx + (THUMB - dw) / 2, ty + (THUMB - dh) / 2,
                         0f, 0f, dw, dh, thumb.width(), thumb.height(), thumb.width(), thumb.height());
             } else {
-                graphics.fill(tx, ty, tx + THUMB, ty + THUMB, Theme.PANEL);
-                Theme.outline(graphics, tx, ty, THUMB, THUMB, Theme.BORDER);
+                UiShapes.pill(graphics, tx, ty, THUMB, THUMB, Theme.PANEL, Theme.BORDER_SUBTLE);
             }
 
             int textY = y + (HEIGHT - font.lineHeight) / 2 + 1;
-            graphics.text(font, chip.label(), tx + THUMB + 3, textY, this.editable ? Theme.TEXT : Theme.TEXT_DISABLED, false);
+            graphics.text(font, chip.label(), tx + THUMB + 4, textY, this.editable ? Theme.TEXT : Theme.TEXT_DISABLED, false);
             boolean closeHot = hot && this.editable && this.onClose(chip, mouseX);
             int closeX = cx + chip.w() - CLOSE_W;
-            if (closeHot) graphics.fill(closeX - 1, y, cx + chip.w(), y + HEIGHT, Theme.DANGER);
-            graphics.text(font, "×", closeX + (CLOSE_W - font.width("×")) / 2 - 1, textY,
-                    !this.editable ? Theme.TEXT_DISABLED : closeHot ? Theme.TEXT : Theme.MUTED, false);
+            if (closeHot) {
+                UiShapes.fillRounded(graphics, closeX, y + 2, CLOSE_W - 2, HEIGHT - 4, UiShapes.R_CHIP, Theme.DANGER);
+            }
+            UiIcons.close(graphics, closeX + (CLOSE_W - 2 - 5) / 2, y + (HEIGHT - 5) / 2,
+                    !this.editable ? Theme.TEXT_DISABLED : closeHot ? Theme.TEXT : Theme.MUTED);
             if (closeHot) graphics.requestCursor(CursorTypes.POINTING_HAND);
         }
         if (clipHorizontally) graphics.disableScissor();
-        // Overflow hints
+        // Overflow indicators
         if (this.scroll > 0) {
-            graphics.fill(this.getX(), y, this.getX() + 7, y + HEIGHT, Theme.BG);
-            Theme.fillPlate(graphics, this.getX(), y, this.getX() + 7, y + HEIGHT, Theme.TEXT_PLATE);
-            graphics.text(font, "‹", this.getX() + 1, y + (HEIGHT - font.lineHeight) / 2 + 1, Theme.MUTED, false);
+            graphics.fill(this.getX(), y, this.getX() + 9, y + HEIGHT, Theme.INPUT);
+            UiIcons.chevronLeft(graphics, this.getX() + 2, y + (HEIGHT - 7) / 2, Theme.MUTED);
         }
         if (this.scroll < this.maxScroll()) {
-            graphics.fill(this.getEndX() - 7, y, this.getEndX(), y + HEIGHT, Theme.BG);
-            Theme.fillPlate(graphics, this.getEndX() - 7, y, this.getEndX(), y + HEIGHT, Theme.TEXT_PLATE);
-            graphics.text(font, "›", this.getEndX() - 6, y + (HEIGHT - font.lineHeight) / 2 + 1, Theme.MUTED, false);
+            graphics.fill(this.getEndX() - 9, y, this.getEndX(), y + HEIGHT, Theme.INPUT);
+            UiIcons.chevronRight(graphics, this.getEndX() - 6, y + (HEIGHT - 7) / 2, Theme.MUTED);
         }
     }
 
@@ -195,19 +192,20 @@ final class AttachmentStrip extends AbstractSpruceWidget {
         String name = Theme.ellipsize(font, image.name(), 200);
         String info = ImagePreviews.typeLabel(image) + " · " + ImagePreviews.formatSize(image.sizeBytes())
                 + (this.editable ? L10n.tr("chat.attach.remove_hint", " · × removes") : "");
-        int pad = 5;
-        int imageH = thumb == null ? 0 : thumb.height() + 4;
+        int pad = 7;
+        int imageH = thumb == null ? 0 : thumb.height() + 5;
         int w = Math.max(font.width(name), font.width(info)) + pad * 2;
         if (thumb != null) w = Math.max(w, thumb.width() + pad * 2);
         int h = pad + imageH + font.lineHeight + 2 + font.lineHeight + pad - 1;
-        int x = Math.clamp(this.getX() - (int) this.scroll + chip.x(), 2, Math.max(2, screenWidth - w - 2));
-        int y = this.getY() - h - 3;
-        graphics.fill(x, y, x + w, y + h, Theme.PANEL);
-        Theme.outline(graphics, x, y, w, h, Theme.BORDER);
+        int x = Math.clamp(this.getX() - (int) this.scroll + chip.x(), 4, Math.max(4, screenWidth - w - 4));
+        int y = this.getY() - h - 5;
+        UiShapes.dropShadow(graphics, x, y, w, h, UiShapes.R_PANEL);
+        UiShapes.panel(graphics, x, y, w, h, UiShapes.R_PANEL, Theme.PANEL, Theme.BORDER_STRONG, true);
         int line = y + pad;
         if (thumb != null) {
             graphics.vanilla().blit(RenderPipelines.GUI_TEXTURED, thumb.texture(), x + pad, line, 0f, 0f,
                     thumb.width(), thumb.height(), thumb.width(), thumb.height());
+            Theme.outline(graphics, x + pad, line, thumb.width(), thumb.height(), Theme.BORDER_SUBTLE);
             line += imageH;
         }
         graphics.text(font, name, x + pad, line, Theme.TEXT, false);

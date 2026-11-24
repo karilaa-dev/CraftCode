@@ -89,52 +89,54 @@ final class ThemeEditorScreen extends SpruceScreen {
     protected void init() {
         this.swatchButtons.clear();
         this.sliders.clear();
-        this.panelW = Math.min(400, this.width - 16);
+        this.panelW = Math.min(412, this.width - 16);
         this.panelX = (this.width - this.panelW) / 2;
         boolean tight = this.height < 270;
-        int gap = tight ? 3 : 6;
-        int x = this.panelX + 10;
-        int w = this.panelW - 20;
+        int gap = tight ? 4 : 7;
+        int x = this.panelX + 12;
+        int w = this.panelW - 24;
         this.contentX = x;
         this.contentW = w;
-        int y = tight ? 30 : 34;
+        int y = tight ? 32 : 36;
 
         // Start from: ‹ [source] › [Reset]
         String resetLabel = L10n.tr("theme.editor.reset", "Reset");
-        int resetW = Math.min(this.buttonWidth(resetLabel, 44), w / 4);
-        int arrowW = 18;
+        int resetW = Math.min(this.buttonWidth(resetLabel, 46), w / 4);
+        int arrowW = 19;
         int midW = w - resetW - 4 - (arrowW + 4) * 2;
-        var prev = new FlatButton(Position.of(x, y), arrowW, 18, "‹", b -> this.cycleSource(-1));
+        var prev = new FlatButton(Position.of(x, y), arrowW, 19, "", b -> this.cycleSource(-1))
+                .withIcon(FlatButton.Icon.CHEVRON_LEFT);
         prev.setTooltip(Component.literal(L10n.tr("theme.editor.source.previous", "Previous starting palette")));
         this.addRenderableWidget(prev);
-        this.sourceButton = this.addRenderableWidget(new FlatButton(Position.of(x + arrowW + 4, y), midW, 18,
+        this.sourceButton = this.addRenderableWidget(new FlatButton(Position.of(x + arrowW + 4, y), midW, 19,
                 this.sourceLabel(), b -> this.cycleSource(1)));
         this.sourceButton.setTooltip(Component.literal(L10n.tr("theme.editor.source.tooltip",
                 "Replace every color with this palette. Click or use ‹ › to choose another.")));
-        var next = new FlatButton(Position.of(x + arrowW + 4 + midW + 4, y), arrowW, 18, "›", b -> this.cycleSource(1));
+        var next = new FlatButton(Position.of(x + arrowW + 4 + midW + 4, y), arrowW, 19, "", b -> this.cycleSource(1))
+                .withIcon(FlatButton.Icon.CHEVRON_RIGHT);
         next.setTooltip(Component.literal(L10n.tr("theme.editor.source.next", "Next starting palette")));
         this.addRenderableWidget(next);
-        var reset = new FlatButton(Position.of(x + w - resetW, y), resetW, 18, resetLabel, b -> this.useSource(this.initialSourceIndex));
+        var reset = new FlatButton(Position.of(x + w - resetW, y), resetW, 19, resetLabel, b -> this.useSource(this.initialSourceIndex));
         reset.setTooltip(Component.literal(L10n.tr("theme.editor.reset.tooltip", "Back to the colors you opened the editor with")));
         this.addRenderableWidget(reset);
-        y += 18 + gap;
+        y += 19 + gap;
 
-        // Swatch row: one button per palette color.
-        int cellGap = 2;
+        // Swatch row: one rounded tile per palette color.
+        int cellGap = 3;
         int cellW = Math.max(8, (w - cellGap * (HexColor.SLOTS - 1)) / HexColor.SLOTS);
         int rowW = cellW * HexColor.SLOTS + cellGap * (HexColor.SLOTS - 1);
         int sx = x + (w - rowW) / 2;
         for (int i = 0; i < HexColor.SLOTS; i++) {
-            var swatch = this.addRenderableWidget(new SwatchButton(Position.of(sx + i * (cellW + cellGap), y), cellW, 16, i));
+            var swatch = this.addRenderableWidget(new SwatchButton(Position.of(sx + i * (cellW + cellGap), y), cellW, 17, i));
             this.swatchButtons.add(swatch);
         }
-        y += 16 + gap;
+        y += 17 + gap;
 
         // Selected color: name on the left, #RRGGBB on the right.
         this.slotY = y;
-        int hexW = Math.max(64, this.font.width("#DDDDDD") + 16);
+        int hexW = Math.max(66, this.font.width("#DDDDDD") + 18);
         this.syncingHex = true;
-        this.hexField = new InputField(Position.of(x + w - hexW, y), hexW,
+        this.hexField = new InputField(Position.of(x + w - hexW, y), hexW, 19,
                 L10n.tr("theme.editor.hex.narration", "Hex color"), "#RRGGBB");
         this.hexField.setTextPredicate(HexColor::allowedDraft);
         this.hexField.setText(this.hexDraft);
@@ -144,16 +146,16 @@ final class ThemeEditorScreen extends SpruceScreen {
         this.hexField.setTooltip(Component.literal(L10n.tr("theme.editor.hex.tooltip",
                 "Type #RGB or #RRGGBB. Enter confirms; an invalid value goes back to the last good color.")));
         this.addRenderableWidget(this.hexField);
-        y += 18 + gap;
+        y += 19 + gap;
 
         // R/G/B sliders beside the live preview (stacked when the panel is too narrow for both).
         int actionsH = 20;
-        int noteH = this.font.lineHeight + 3;
-        int bottomLimit = this.height - 10 - actionsH - 4 - noteH;
+        int noteH = this.font.lineHeight + 4;
+        int bottomLimit = this.height - 12 - actionsH - 4 - noteH;
         boolean sideBySide = w >= 240;
-        int slidersW = sideBySide ? Math.max(100, (w - 8) * 2 / 5) : w;
-        int sliderH = 18;
-        int sliderGap = tight ? 2 : 4;
+        int slidersW = sideBySide ? Math.max(104, (w - 10) * 2 / 5) : w;
+        int sliderH = 20;
+        int sliderGap = tight ? 2 : 5;
         String[] names = {L10n.tr("theme.editor.red", "R"), L10n.tr("theme.editor.green", "G"), L10n.tr("theme.editor.blue", "B")};
         String[] tips = {
                 L10n.tr("theme.editor.red.tooltip", "Red"), L10n.tr("theme.editor.green.tooltip", "Green"),
@@ -169,17 +171,17 @@ final class ThemeEditorScreen extends SpruceScreen {
         }
         int slidersBottom = y + 3 * sliderH + 2 * sliderGap;
         if (sideBySide) {
-            this.previewX = x + slidersW + 8;
+            this.previewX = x + slidersW + 10;
             this.previewY = y;
-            this.previewW = w - slidersW - 8;
-            this.previewH = Math.clamp(bottomLimit - y, 3 * sliderH + 2 * sliderGap, 130);
-            y = Math.max(slidersBottom, this.previewY + this.previewH) + 3;
+            this.previewW = w - slidersW - 10;
+            this.previewH = Math.clamp(bottomLimit - y, 3 * sliderH + 2 * sliderGap, 134);
+            y = Math.max(slidersBottom, this.previewY + this.previewH) + 4;
         } else {
             this.previewX = x;
             this.previewY = slidersBottom + gap;
             this.previewW = w;
-            this.previewH = Math.clamp(bottomLimit - this.previewY, 40, 110);
-            y = this.previewY + this.previewH + 3;
+            this.previewH = Math.clamp(bottomLimit - this.previewY, 44, 112);
+            y = this.previewY + this.previewH + 4;
         }
         this.noteY = y;
         y += noteH;
@@ -348,26 +350,24 @@ final class ThemeEditorScreen extends SpruceScreen {
         if (Theme.seeThrough()) Theme.seeThroughBackdrop(this.minecraft, graphics, this.width, this.height);
         else super.extractBackground(graphics, mouseX, mouseY, delta);
         graphics.fill(0, 0, this.width, this.height, Theme.BG);
-        graphics.fill(this.panelX, 24, this.panelX + this.panelW, this.panelBottom, Theme.PANEL_SURFACE);
-        graphics.fill(this.panelX, 24, this.panelX + this.panelW, 25, Theme.BORDER);
-        graphics.fill(this.panelX, this.panelBottom - 1, this.panelX + this.panelW, this.panelBottom, Theme.BORDER);
+        UiShapes.panel(graphics, this.panelX, 26, this.panelW, Math.max(20, this.panelBottom - 26),
+                UiShapes.R_PANEL, Theme.PANEL_SURFACE, Theme.BORDER_STRONG, true);
     }
 
     @Override
     public void extractRenderState(SpruceGuiGraphics graphics, int mouseX, int mouseY, float delta) {
         var heading = this.getTitle().copy().withStyle(s -> s.withBold(true));
-        Theme.plate(graphics, this.panelX + 10, 10, this.font.width(heading), this.font.lineHeight, Theme.TEXT_PLATE);
-        graphics.text(this.font, heading, this.panelX + 10, 10, Theme.TEXT, false);
+        Theme.plate(graphics, this.panelX + 12, 10, this.font.width(heading), this.font.lineHeight, Theme.TEXT_PLATE);
+        graphics.text(this.font, heading, this.panelX + 12, 10, Theme.TEXT, false);
 
-        // Selected color: chip + name (+ number) left of the hex field.
+        // Selected color: rounded chip + name (+ number) left of the hex field.
         int chipY = this.slotY + 3;
-        graphics.fill(this.contentX, chipY, this.contentX + 12, chipY + 12, this.draft[this.selected]);
-        Theme.outline(graphics, this.contentX, chipY, 12, 12, Theme.BORDER);
+        UiShapes.pill(graphics, this.contentX, chipY, 13, 13, this.draft[this.selected], Theme.BORDER_STRONG);
         int hexX = this.hexField == null ? this.contentX + this.contentW : this.hexField.getX();
         String name = L10n.tr("theme.editor.slot.position", "%1$s  %2$s/%3$s", slotName(this.selected),
                 this.selected + 1, HexColor.SLOTS);
-        graphics.text(this.font, Theme.ellipsize(this.font, name, hexX - this.contentX - 22), this.contentX + 18,
-                this.slotY + 5, Theme.TEXT, false);
+        graphics.text(this.font, Theme.ellipsize(this.font, name, hexX - this.contentX - 24), this.contentX + 19,
+                this.slotY + 6, Theme.TEXT, false);
 
         this.drawPreview(graphics, mouseX, mouseY);
 
@@ -389,91 +389,93 @@ final class ThemeEditorScreen extends SpruceScreen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
     }
 
-    /** A miniature workspace painted only from the draft, so the real UI stays unchanged until Save. */
+    /** A miniature workspace painted only from the draft, mirroring the rounded design language. */
     private void drawPreview(SpruceGuiGraphics graphics, int mouseX, int mouseY) {
         this.hits.clear();
         int[] c = this.draft;
         int x0 = this.previewX, y0 = this.previewY, x1 = x0 + this.previewW, y1 = y0 + this.previewH;
         int line = this.font.lineHeight;
-        // canvas + outer border
-        graphics.fill(x0, y0, x1, y1, c[0]);
+        // canvas + outer rounded frame
+        UiShapes.fillRounded(graphics, x0, y0, this.previewW, this.previewH, UiShapes.R_CONTROL, c[0]);
         this.hits.add(new Hit(x0, y0, x1, y1, 0));
         // sidebar
         int sideW = Math.max(36, this.previewW * 3 / 10);
         int sx1 = x0 + sideW;
-        graphics.fill(x0, y0, sx1, y1, c[1]);
-        graphics.fill(sx1, y0, sx1 + 1, y1, c[6]);
+        graphics.fill(x0 + 1, y0 + 1, sx1, y1 - 1, c[1]);
+        graphics.fill(sx1, y0 + 1, sx1 + 1, y1 - 1, c[6]);
         this.hits.add(new Hit(x0, y0, sx1, y1, 1));
         int rowH = line + 3;
-        int ry = y0 + 4;
+        int ry = y0 + 5;
         String[] rows = {
                 L10n.tr("theme.editor.preview.thread", "Thread"),
                 L10n.tr("theme.editor.preview.hover", "Hovered"),
                 L10n.tr("theme.editor.preview.other", "Older")};
-        for (int i = 0; i < rows.length && ry + rowH <= y1 - 2; i++, ry += rowH + 1) {
+        for (int i = 0; i < rows.length && ry + rowH <= y1 - 2; i++, ry += rowH + 2) {
             int fill = i == 0 ? c[8] : i == 1 ? c[10] : c[1];
             if (i < 2) {
-                graphics.fill(x0 + 2, ry, sx1 - 2, ry + rowH, fill);
-                this.hits.add(new Hit(x0 + 2, ry, sx1 - 2, ry + rowH, i == 0 ? 8 : 10));
+                UiShapes.fillRounded(graphics, x0 + 3, ry, sideW - 5, rowH, UiShapes.R_CHIP, fill);
+                if (i == 0) UiShapes.accentRail(graphics, x0 + 3, ry + 2, rowH - 4, c[7]);
+                this.hits.add(new Hit(x0 + 3, ry, sx1 - 2, ry + rowH, i == 0 ? 8 : 10));
             }
-            graphics.text(this.font, Theme.ellipsize(this.font, rows[i], sideW - 10), x0 + 5, ry + 2,
+            graphics.text(this.font, Theme.ellipsize(this.font, rows[i], sideW - 12), x0 + 7, ry + 2,
                     i == 0 ? c[4] : c[5], false);
         }
 
         // main column
-        int mx0 = sx1 + 5, mx1 = x1 - 5;
+        int mx0 = sx1 + 6, mx1 = x1 - 6;
         int mw = mx1 - mx0;
-        int my = y0 + 4;
+        int my = y0 + 5;
         String hello = L10n.tr("theme.editor.preview.assistant", "Here is the plan.");
         graphics.text(this.font, Theme.ellipsize(this.font, hello, mw), mx0, my, c[4], false);
         this.hits.add(new Hit(mx0, my - 1, mx0 + Math.min(mw, this.font.width(hello)), my + line, 4));
-        my += line + 3;
+        my += line + 4;
 
         String you = L10n.tr("theme.editor.preview.user", "Looks good!");
-        int bubbleW = Math.min(mw, this.font.width(you) + 10);
-        if (my + line + 4 <= y1 - 20) {
-            graphics.fill(mx1 - bubbleW, my, mx1, my + line + 4, c[9]);
-            graphics.text(this.font, Theme.ellipsize(this.font, you, bubbleW - 8), mx1 - bubbleW + 5, my + 3, c[4], false);
-            this.hits.add(new Hit(mx1 - bubbleW, my, mx1, my + line + 4, 9));
-            my += line + 7;
+        int bubbleW = Math.min(mw, this.font.width(you) + 12);
+        if (my + line + 5 <= y1 - 22) {
+            UiShapes.fillRounded(graphics, mx1 - bubbleW, my, bubbleW, line + 5, UiShapes.R_CONTROL, c[9]);
+            graphics.text(this.font, Theme.ellipsize(this.font, you, bubbleW - 10), mx1 - bubbleW + 6, my + 3, c[4], false);
+            this.hits.add(new Hit(mx1 - bubbleW, my, mx1, my + line + 5, 9));
+            my += line + 8;
         }
 
         String card = L10n.tr("theme.editor.preview.card", "Panel · muted");
-        if (my + line + 6 <= y1 - 20) {
-            graphics.fill(mx0, my, mx1, my + line + 6, c[2]);
-            Theme.outline(graphics, mx0, my, mw, line + 6, c[6]);
-            graphics.text(this.font, Theme.ellipsize(this.font, card, mw - 8), mx0 + 4, my + 4, c[5], false);
+        if (my + line + 7 <= y1 - 22) {
+            UiShapes.panel(graphics, mx0, my, mw, line + 6, UiShapes.R_CONTROL, c[2], c[6], false);
+            graphics.text(this.font, Theme.ellipsize(this.font, card, mw - 10), mx0 + 5, my + 4, c[5], false);
             this.hits.add(new Hit(mx0, my, mx1, my + line + 6, 2));
             this.hits.add(new Hit(mx0, my, mx1, my + 1, 6));
         }
 
-        // composer: input + accent button with primary text
-        int cy1 = y1 - 4, cy0 = cy1 - (line + 5);
+        // composer: rounded input + accent button with primary text
+        int cy1 = y1 - 5, cy0 = cy1 - (line + 6);
         String send = L10n.tr("theme.editor.preview.send", "Send");
         int sendW = this.font.width(send) + 10;
-        int inputX1 = mx1 - sendW - 3;
-        graphics.fill(mx0, cy0, inputX1, cy1, c[3]);
-        Theme.outline(graphics, mx0, cy0, inputX1 - mx0, cy1 - cy0, c[6]);
+        int inputX1 = mx1 - sendW - 4;
+        UiShapes.panel(graphics, mx0, cy0, inputX1 - mx0, cy1 - cy0, UiShapes.R_CONTROL, c[3], c[6], false);
         graphics.text(this.font, Theme.ellipsize(this.font, L10n.tr("theme.editor.preview.input", "Ask anything"),
-                inputX1 - mx0 - 8), mx0 + 4, cy0 + 3, c[5], false);
+                inputX1 - mx0 - 8), mx0 + 5, cy0 + 4, c[5], false);
         this.hits.add(new Hit(mx0, cy0, inputX1, cy1, 3));
-        graphics.fill(mx1 - sendW, cy0, mx1, cy1, c[7]);
-        graphics.text(this.font, send, mx1 - sendW + 5, cy0 + 3, c[11], false);
+        UiShapes.fillRounded(graphics, mx1 - sendW, cy0, sendW, cy1 - cy0, UiShapes.R_CONTROL, c[7]);
+        graphics.text(this.font, send, mx1 - sendW + 5, cy0 + 4, c[11], false);
         this.hits.add(new Hit(mx1 - sendW, cy0, mx1, cy1, 7));
         this.hits.add(new Hit(mx1 - sendW + 4, cy0 + 2, mx1 - 4, cy1 - 2, 11));
 
-        Theme.outline(graphics, x0, y0, this.previewW, this.previewH, c[6]);
+        UiShapes.outlineRounded(graphics, x0, y0, this.previewW, this.previewH, UiShapes.R_CONTROL, c[6]);
 
         // Hover: outline the part under the mouse and name its color.
         var hover = this.hitAt(mouseX, mouseY);
         if (hover != null) {
-            Theme.outline(graphics, hover.x0(), hover.y0(), hover.x1() - hover.x0(), hover.y1() - hover.y0(), Theme.ACCENT);
+            UiShapes.outlineRounded(graphics, hover.x0(), hover.y0(), hover.x1() - hover.x0(), hover.y1() - hover.y0(),
+                    UiShapes.R_CHIP, Theme.ACCENT);
             graphics.vanilla().setTooltipForNextFrame(this.font, this.font.split(Component.literal(
                     slotName(hover.slot()) + "  " + HexColor.format(c[hover.slot()])), 200), mouseX, mouseY);
         }
         var sel = this.selectedHit();
-        if (sel != null && sel != hover)
-            Theme.outline(graphics, sel.x0(), sel.y0(), sel.x1() - sel.x0(), sel.y1() - sel.y0(), Theme.TEXT_SOFT);
+        if (sel != null && sel != hover) {
+            UiShapes.outlineRounded(graphics, sel.x0(), sel.y0(), sel.x1() - sel.x0(), sel.y1() - sel.y0(),
+                    UiShapes.R_CHIP, Theme.TEXT_SOFT);
+        }
     }
 
     private @Nullable Hit selectedHit() {
@@ -483,7 +485,7 @@ final class ThemeEditorScreen extends SpruceScreen {
 
     // ---------------------------------------------------------------- widgets
 
-    /** One palette color in the swatch row; selecting it edits that color. */
+    /** One rounded palette swatch tile; selecting it edits that color. */
     private final class SwatchButton extends FlatButton {
         private final int slot;
 
@@ -507,11 +509,13 @@ final class ThemeEditorScreen extends SpruceScreen {
             boolean chosen = ThemeEditorScreen.this.selected == this.slot;
             boolean hot = this.isMouseHovered() || this.isFocused();
             int x = this.getX(), y = this.getY(), w = this.getWidth(), h = this.getHeight();
-            graphics.fill(x, y, x + w, y + h, chosen || hot ? Theme.TEXT : Theme.BORDER);
-            graphics.fill(x + 1, y + 1, x + w - 1, y + h - 1, chosen ? Theme.PANEL : Theme.BORDER);
-            graphics.fill(x + 2, y + 2, x + w - 2, y + h - 2, ThemeEditorScreen.this.draft[this.slot]);
-            if (chosen) graphics.fill(x, y + h, x + w, y + h + 1, Theme.ACCENT);
-            if (this.isFocused() && !chosen) Theme.outline(graphics, x, y, w, h, Theme.ACCENT);
+            int outerBorder = chosen ? Theme.ACCENT : hot ? Theme.TEXT : Theme.BORDER;
+            UiShapes.pill(graphics, x, y, w, h, chosen ? Theme.PANEL : Theme.BORDER_SUBTLE, outerBorder);
+            UiShapes.fillRounded(graphics, x + 2, y + 2, Math.max(1, w - 4), Math.max(1, h - 4), UiShapes.R_CHIP,
+                    ThemeEditorScreen.this.draft[this.slot]);
+            if (chosen && w > 4) {
+                graphics.fill(x + 2, y + h + 1, x + w - 2, y + h + 3, Theme.ACCENT);
+            }
         }
 
         @Override

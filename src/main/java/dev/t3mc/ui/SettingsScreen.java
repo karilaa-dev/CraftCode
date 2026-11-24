@@ -91,13 +91,13 @@ public class SettingsScreen extends SpruceScreen {
         this.notes.clear();
         this.validationNotes.clear();
         this.swatches.clear();
-        this.panelW = Math.min(380, this.width - 16);
+        this.panelW = Math.min(396, this.width - 16);
         this.panelX = (this.width - this.panelW) / 2;
         // Roomy layouts allow 3-line help and a 4-line error; below 360px those shrink to one/two lines, and below
         // 270px (e.g. 320×240) rows also tighten so every control and the action row stay on screen with an error.
         boolean roomy = this.height >= 360;
         boolean tight = this.height < 270;
-        int rowGap = roomy ? 8 : tight ? 2 : 4;
+        int rowGap = roomy ? 9 : tight ? 3 : 5;
         int sectionGap = tight ? 0 : 2;
         int noteLines = roomy ? 3 : 1;
         // Labels column fits the widest label in the current language (Russian runs longer than English).
@@ -107,7 +107,7 @@ public class SettingsScreen extends SpruceScreen {
                 L10n.tr("settings.notify", "Notify via"), L10n.tr("settings.theme", "Theme"),
                 L10n.tr("settings.transparency", "Transparency"), L10n.tr("settings.shortcut", "Shortcut")})
             labelW = Math.max(labelW, this.font.width(l) + 8);
-        labelW = Math.min(labelW, (this.panelW - 20) / 3);
+        labelW = Math.min(labelW, (this.panelW - 24) / 3);
         int x = this.panelX + 10;
         int w = this.panelW - 20;
         int fx = x + labelW;
@@ -115,15 +115,17 @@ public class SettingsScreen extends SpruceScreen {
         int y = 30;
 
         if (this.serverForm) {
-            buildServerForm(y, rowGap, sectionGap, roomy, fx, fw, x, w, noteLines);
+            buildServerForm(y + 4, rowGap, sectionGap, roomy, fx, fw, x, w, noteLines);
             return;
         }
-        int half = (w - 4) / 2;
-        this.addRenderableWidget(new FlatButton(Position.of(x, y), half, 18, L10n.tr("chat.workspace.servers", "Servers"),
-                b -> minecraft.gui.setScreen(new ConnectionsScreen(parent, controller))));
-        this.addRenderableWidget(new FlatButton(Position.of(x + half + 4, y), w - half - 4, 18,
+        int segPad = 2;
+        int segW = w - segPad * 2;
+        int half = (segW - 4) / 2;
+        this.addRenderableWidget(new FlatButton(Position.of(x + segPad, y), half, 19, L10n.tr("chat.workspace.servers", "Servers"),
+                FlatButton.Kind.SUBTLE, b -> minecraft.gui.setScreen(new ConnectionsScreen(parent, controller))));
+        this.addRenderableWidget(new FlatButton(Position.of(x + segPad + half + 4, y), segW - half - 4, 19,
                 L10n.tr("settings.other", "Other settings"), FlatButton.Kind.SELECTED, b -> {}));
-        y += 25;
+        y = 66;
 
         // Notifications
         this.labelRow(y, L10n.tr("settings.notify", "Notify via"));
@@ -136,7 +138,7 @@ public class SettingsScreen extends SpruceScreen {
                 case OFF -> L10n.tr("settings.notify.off", "Off");
             };
             int bw = mode == NotificationMode.OFF ? fw - (third + 4) * 2 : third;
-            this.addRenderableWidget(new FlatButton(Position.of(bx, y), bw, 18, label,
+            this.addRenderableWidget(new FlatButton(Position.of(bx, y), bw, 19, label,
                     this.notificationMode == mode ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL, b -> {
                 if (!controller.setNotifications(mode)) {
                     fail(L10n.tr("settings.write_error", "Could not save settings."));
@@ -147,7 +149,7 @@ public class SettingsScreen extends SpruceScreen {
             }));
             bx += bw + 4;
         }
-        y += 18 + 3;
+        y += 19 + 4;
         String notifyHelp = switch (this.notificationMode) {
             case CHAT -> L10n.tr("settings.notify.chat.help", "Agent updates appear as [T3] lines in chat.");
             case POPUP -> L10n.tr("settings.notify.popup.help", "Agent updates appear as toasts.");
@@ -162,76 +164,80 @@ public class SettingsScreen extends SpruceScreen {
         var settings = this.controller.snapshot().settings();
         var theme = settings.theme();
         var themes = this.quickThemes(settings);
-        int arrowW = 18;
+        int arrowW = 19;
         int midW = fw - (arrowW + 4) * 2;
         String customizeLabel = L10n.tr("settings.theme.customize", "Customize…");
-        int customizeW = Math.min(this.buttonWidth(customizeLabel, 64), fw / 3);
+        int customizeW = Math.min(this.buttonWidth(customizeLabel, 66), fw / 3);
         int themeMidW = midW - customizeW - 4;
         int index = Math.max(0, themes.indexOf(theme));
-        var prev = new FlatButton(Position.of(fx, y), arrowW, 18, "‹", b -> this.cycleTheme(-1));
+        var prev = new FlatButton(Position.of(fx, y), arrowW, 19, "", b -> this.cycleTheme(-1))
+                .withIcon(FlatButton.Icon.CHEVRON_LEFT);
         prev.setTooltip(Component.literal(themes.get(Math.floorMod(index - 1, themes.size())).label()));
         this.addRenderableWidget(prev);
         String label = L10n.tr("settings.theme.position", "%1$s  %2$s/%3$s", theme.label(), index + 1, themes.size());
-        if (this.font.width(label) + 8 > themeMidW) label = theme.label(); // compact: drop the "n/9" counter
-        var current = new FlatButton(Position.of(fx + arrowW + 4, y), themeMidW, 18, label, FlatButton.Kind.SELECTED,
+        if (this.font.width(label) + 10 > themeMidW) label = theme.label();
+        var current = new FlatButton(Position.of(fx + arrowW + 4, y), themeMidW, 19, label, FlatButton.Kind.SELECTED,
                 b -> this.cycleTheme(1));
         current.setTooltip(Component.literal(L10n.tr("settings.theme.tooltip", "Click or use ‹ › to switch themes.")));
         this.addRenderableWidget(current);
-        var next = new FlatButton(Position.of(fx + arrowW + 4 + themeMidW + 4, y), arrowW, 18, "›", b -> this.cycleTheme(1));
+        var next = new FlatButton(Position.of(fx + arrowW + 4 + themeMidW + 4, y), arrowW, 19, "", b -> this.cycleTheme(1))
+                .withIcon(FlatButton.Icon.CHEVRON_RIGHT);
         next.setTooltip(Component.literal(themes.get(Math.floorMod(index + 1, themes.size())).label()));
         this.addRenderableWidget(next);
-        var customize = new FlatButton(Position.of(fx + fw - customizeW, y), customizeW, 18, customizeLabel,
+        var customize = new FlatButton(Position.of(fx + fw - customizeW, y), customizeW, 19, customizeLabel,
                 b -> this.openThemeEditor());
         customize.setTooltip(Component.literal(L10n.tr("settings.theme.customize.tooltip",
                 "Edit every theme color, starting from the current one, and save it as your Custom theme.")));
         this.addRenderableWidget(customize);
         var palette = settings.effectivePalette();
-        int sx = fx + arrowW + 4 + 5;
-        if (themeMidW >= this.font.width(label) + 70) for (int color : new int[] {palette.canvas(), palette.accent(), palette.userBubble()}) {
+        int sx = fx + arrowW + 4 + 6;
+        if (themeMidW >= this.font.width(label) + 74) for (int color : new int[] {palette.canvas(), palette.accent(), palette.userBubble()}) {
             this.swatches.add(new Swatch(sx, y + 5, 0xFF000000 | color));
-            sx += 10;
+            sx += 11;
         }
-        y += 18 + rowGap + sectionGap;
+        y += 19 + rowGap + sectionGap;
 
         // Transparency: − [slider] +, 5% steps. Previews live (the screen behind follows it) and saves right away.
         this.labelRow(y, L10n.tr("settings.transparency", "Transparency"));
-        var less = new FlatButton(Position.of(fx, y), arrowW, 18, "-", b -> this.stepTransparency(-Theme.TRANSPARENCY_STEP));
+        var less = new FlatButton(Position.of(fx, y), arrowW, 20, "", b -> this.stepTransparency(-Theme.TRANSPARENCY_STEP))
+                .withIcon(FlatButton.Icon.MINUS);
         less.setTooltip(Component.literal(L10n.tr("settings.transparency.less", "More solid (−%s)",
                 Theme.TRANSPARENCY_STEP + "%")));
         this.addRenderableWidget(less);
-        this.transparencySlider = this.addRenderableWidget(new PercentSlider(Position.of(fx + arrowW + 4, y), midW, 18,
+        this.transparencySlider = this.addRenderableWidget(new PercentSlider(Position.of(fx + arrowW + 4, y), midW, 20,
                 Theme.transparency(), Theme.TRANSPARENCY_STEP, this::applyTransparency));
         this.transparencySlider.setTooltip(Component.literal(L10n.tr("settings.transparency.tooltip",
                 "How much of the game shows through T3 Code. %1$s is solid.\nClick or drag; ←/→ change it by %2$s.",
                 "0%", Theme.TRANSPARENCY_STEP + "%")));
-        var more = new FlatButton(Position.of(fx + fw - arrowW, y), arrowW, 18, "+", b -> this.stepTransparency(Theme.TRANSPARENCY_STEP));
+        var more = new FlatButton(Position.of(fx + fw - arrowW, y), arrowW, 20, "", b -> this.stepTransparency(Theme.TRANSPARENCY_STEP))
+                .withIcon(FlatButton.Icon.PLUS);
         more.setTooltip(Component.literal(L10n.tr("settings.transparency.more", "More see-through (+%s)",
                 Theme.TRANSPARENCY_STEP + "%")));
         this.addRenderableWidget(more);
-        y += 18 + rowGap + sectionGap;
+        y += 20 + rowGap + sectionGap;
 
         // Workspace shortcut: the same vanilla key mapping shown in Options → Controls → Key Binds.
         this.labelRow(y, L10n.tr("settings.shortcut", "Shortcut"));
         String controlsLabel = L10n.tr("settings.shortcut.controls", "Controls…");
-        int controlsW = Math.min(this.buttonWidth(controlsLabel, 58), fw / 2);
+        int controlsW = Math.min(this.buttonWidth(controlsLabel, 60), fw / 2);
         int keyW = fw - controlsW - 4;
-        this.keyButton = this.addRenderableWidget(new FlatButton(Position.of(fx, y), keyW, 18, this.keyLabel(),
+        this.keyButton = this.addRenderableWidget(new FlatButton(Position.of(fx, y), keyW, 19, this.keyLabel(),
                 this.capturingKey ? FlatButton.Kind.PRIMARY : FlatButton.Kind.NORMAL, b -> this.toggleKeyCapture()));
         this.keyButton.setTooltip(Component.literal(this.capturingKey
                 ? L10n.tr("settings.shortcut.capturing.tooltip", "Press a key to open T3 Code. Esc cancels.")
                 : L10n.tr("settings.shortcut.tooltip", "Click, then press a key to open T3 Code.")));
-        var controls = new FlatButton(Position.of(fx + keyW + 4, y), controlsW, 18, controlsLabel, b -> this.openKeyBinds());
+        var controls = new FlatButton(Position.of(fx + keyW + 4, y), controlsW, 19, controlsLabel, b -> this.openKeyBinds());
         controls.setTooltip(Component.literal(L10n.tr("settings.shortcut.controls.tooltip", "Open Minecraft's key binds")));
         this.addRenderableWidget(controls);
-        y += 18 + rowGap + sectionGap;
+        y += 19 + rowGap + sectionGap;
 
         if (!this.error.isEmpty())
             y = this.wrapNote(this.validationNotes, y, x, this.error, Theme.RED, w, roomy ? 4 : 2) + sectionGap;
 
         // Actions
         String done = L10n.tr("settings.done", "Done");
-        int doneW = buttonWidth(done, 64);
-        this.addRenderableWidget(new FlatButton(Position.of(x + w - doneW, y), doneW, 20, done, thisButton -> onClose()));
+        int doneW = buttonWidth(done, 68);
+        this.addRenderableWidget(new FlatButton(Position.of(x + w - doneW, y), doneW, 20, done, FlatButton.Kind.PRIMARY, thisButton -> onClose()));
         this.panelBottom = Math.min(y + 30, height);
     }
 
@@ -242,7 +248,7 @@ public class SettingsScreen extends SpruceScreen {
         name.setText(this.profileName);
         name.setChangedListener(text -> this.profileName = text);
         this.addRenderableWidget(name);
-        y += 18 + rowGap;
+        y += 19 + rowGap;
 
         // Connection: one T3 URL plus an optional, masked connection code.
         this.labelRow(y, L10n.tr("settings.url", "T3 URL"));
@@ -251,7 +257,7 @@ public class SettingsScreen extends SpruceScreen {
         url.setText(this.url);
         url.onEnter(this::save);
         InputField first = this.addRenderableWidget(url);
-        y += 18 + rowGap;
+        y += 19 + rowGap;
 
         this.labelRow(y, L10n.tr("settings.code", "Code"));
         var code = new InputField(Position.of(fx, y), fw, L10n.tr("settings.code.narration", "Connection code"),
@@ -280,7 +286,7 @@ public class SettingsScreen extends SpruceScreen {
         });
         code.onEnter(this::save);
         this.addRenderableWidget(code);
-        y += 18 + 3;
+        y += 19 + 3;
         String help = !this.adding && this.saved.hasSavedSession()
                 ? L10n.tr("settings.code.help.saved",
                         "Leave the code blank to keep the saved login, or to sign in with your browser for a new URL.")
@@ -500,9 +506,16 @@ public class SettingsScreen extends SpruceScreen {
         if (Theme.seeThrough()) Theme.seeThroughBackdrop(this.minecraft, graphics, this.width, this.height);
         else super.extractBackground(graphics, mouseX, mouseY, delta);
         graphics.fill(0, 0, this.width, this.height, Theme.BG);
-        graphics.fill(this.panelX, 24, this.panelX + this.panelW, this.panelBottom, Theme.PANEL_SURFACE);
-        graphics.fill(this.panelX, 24, this.panelX + this.panelW, 25, Theme.BORDER);
-        graphics.fill(this.panelX, this.panelBottom - 1, this.panelX + this.panelW, this.panelBottom, Theme.BORDER);
+        if (!this.serverForm) {
+            int left = this.panelX + 10;
+            int w = this.panelW - 20;
+            UiShapes.panel(graphics, left, 28, w, 23, UiShapes.R_CONTROL, Theme.INPUT, Theme.BORDER, false);
+            UiShapes.panel(graphics, this.panelX, 58, this.panelW, Math.max(20, this.panelBottom - 58),
+                    UiShapes.R_PANEL, Theme.PANEL_SURFACE, Theme.BORDER_STRONG, true);
+        } else {
+            UiShapes.panel(graphics, this.panelX, 26, this.panelW, Math.max(20, this.panelBottom - 26),
+                    UiShapes.R_PANEL, Theme.PANEL_SURFACE, Theme.BORDER_STRONG, true);
+        }
     }
 
     @Override
@@ -512,18 +525,17 @@ public class SettingsScreen extends SpruceScreen {
         graphics.text(this.font, heading, this.panelX + 10, 10, Theme.TEXT, false);
         var connection = this.controller.snapshot().connection();
         String status = Theme.connectionLabel(connection.state());
-        Theme.plate(graphics, this.panelX + this.panelW - 18 - this.font.width(status), 10, 8 + this.font.width(status),
+        Theme.plate(graphics, this.panelX + this.panelW - 19 - this.font.width(status), 10, 9 + this.font.width(status),
                 this.font.lineHeight, Theme.TEXT_PLATE);
-        Theme.dot(graphics, this.panelX + this.panelW - 18 - this.font.width(status), 12,
-                Theme.connectionColor(connection.state()), connection.state() == ConnectionState.CONNECTING);
+        UiIcons.connectionMark(graphics, this.panelX + this.panelW - 19 - this.font.width(status), 11,
+                connection.state(), Theme.connectionColor(connection.state()));
         graphics.text(this.font, status, this.panelX + this.panelW - 10 - this.font.width(status), 10, Theme.MUTED, false);
 
         for (var note : this.notes) graphics.text(this.font, note.text(), note.x(), note.y(), note.color(), false);
         for (var note : this.validationNotes) graphics.text(this.font, note.text(), note.x(), note.y(), note.color(), false);
         super.extractRenderState(graphics, mouseX, mouseY, delta);
         for (var swatch : this.swatches) {
-            graphics.fill(swatch.x(), swatch.y(), swatch.x() + 8, swatch.y() + 8, swatch.color());
-            Theme.outline(graphics, swatch.x(), swatch.y(), 8, 8, Theme.BORDER);
+            UiShapes.pill(graphics, swatch.x(), swatch.y(), 9, 9, swatch.color(), Theme.BORDER_STRONG);
         }
     }
 }
