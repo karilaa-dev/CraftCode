@@ -59,14 +59,20 @@ public final class T3Api implements ChatImage.PageReader {
     public enum MessageNotice { NONE, EARLIER_HISTORY, HIDDEN_ATTACHMENT }
     public record Message(String id, String role, String text, long createdAtMillis, boolean streaming, String messageId,
                           String sourceThreadId, String runId, String phase, List<ChatImage> images,
-                          MessageNotice notice, boolean truncated, int position) {
-        public String displayText(boolean hasImages) {
+                          MessageNotice notice, boolean truncated, int position, int attachmentCount) {
+        public String displayText(int visibleAttachments) {
             String body = switch (notice) {
                 case NONE -> text;
                 case EARLIER_HISTORY -> L10n.tr("chat.history.recent_only", "Showing recent messages. Earlier history is available in T3 Code.");
-                case HIDDEN_ATTACHMENT -> hasImages ? "" : L10n.tr("chat.history.attachment_without_preview",
+                case HIDDEN_ATTACHMENT -> visibleAttachments > 0 || attachmentCount != 0 ? "" : L10n.tr("chat.history.attachment_without_preview",
                         "Attachment shared in T3 Code. This server did not include a preview.");
             };
+            if (attachmentCount > visibleAttachments || attachmentCount < 0 && visibleAttachments == 0) {
+                String note = attachmentCount < 0 ? L10n.tr("chat.attachment.shared", "Attachments shared")
+                        : attachmentCount == 1 ? L10n.tr("chat.attachment.one", "1 attachment")
+                        : L10n.tr("chat.attachment.count", "%s attachments", attachmentCount);
+                body = body.isEmpty() ? note : note + "\n" + body;
+            }
             return truncated ? body + "\n" + L10n.tr("chat.history.truncated", "[… continued in T3 Code]") : body;
         }
     }
@@ -86,6 +92,7 @@ public final class T3Api implements ChatImage.PageReader {
     private static final List<String> EVENT_TYPES = List.of("thread.needs_input", "thread.run_settled");
     private final McpClient client;
     private final String environmentId;
+    private DesktopAttachments desktop;
     private Map<String, String> eventCursors = Map.of();
 
     public T3Api(McpClient client) { this(client, ""); }
@@ -93,6 +100,19 @@ public final class T3Api implements ChatImage.PageReader {
     public T3Api(McpClient client, String environmentId) {
         this.client = client;
         this.environmentId = environmentId;
+    }
+
+    /** A desktop may share this environment with Minecraft even when the profile uses a LAN URL. */
+    public void matchDesktop(boolean canReadEnvironment) {
+        try {
+            var data = DesktopAttachments.dataDirectory();
+            if (!DesktopAttachments.available(data)) return;
+            String id = environmentId;
+            if (id.isEmpty() && canReadEnvironment) id = string(call("t3_environment_read", new JsonObject()), "environmentId");
+            desktop = DesktopAttachments.match(data, id);
+        } catch (IOException | RuntimeException ignored) {
+            // Desktop integration is optional. The MCP conversation remains available.
+        }
     }
 
     public List<LinkedEnvironmentView> links() throws IOException {
@@ -158,36 +178,53 @@ public final class T3Api implements ChatImage.PageReader {
         List<Message> messages = new ArrayList<>();
         if (present(result, "earlierPosition")) {
             messages.add(new Message("craftcode-history", "system", "", 0, false, "", threadId, "", "", List.of(),
-                    MessageNotice.EARLIER_HISTORY, false, -1));
+                    MessageNotice.EARLIER_HISTORY, false, -1, 0));
         }
-        for (JsonElement entry : array(result, "items")) {
+        var items = array(result, "items");
+        var localFiles = desktop == null ? Map.<String,List<ChatImage>>of() : desktop.forMessages(threadId, items);
+        for (JsonElement entry : items) {
             JsonObject item = object(entry, "items");
             String text = string(item, "text");
             if (text.isEmpty()) text = string(item, "title");
-            // T3's messages view omits attachment descriptors. An image-only user message
-            // still has a messageId, which the composer can match against its send receipt.
-            boolean missingAttachment = text.isEmpty() && "user_message".equals(string(item, "type"));
+            String type = string(item, "type");
+            if (type.equals("checkpoint")) continue;
+            boolean missingAttachment = text.isBlank() && "user_message".equals(type);
             if (missingAttachment) text = ATTACHMENT_PLACEHOLDER;
             var content = T3MessageImages.extract(text, item, environmentId.isEmpty() ? client.endpoint() : null, this, threadId);
+            var files = localFiles.getOrDefault(string(item, "itemId"), List.of());
+            var images = ChatImage.merge(files, content.images());
             text = content.text();
-            if (text.isEmpty() && content.images().isEmpty()) continue;
+            if (text.isEmpty() && images.isEmpty() && !isTool(type)) continue;
             // MCP-sent user messages can have createdBy="agent". Type identifies the chat role.
             String role = switch (string(item, "type")) {
                 case "user_message" -> "user";
-                case "assistant_message", "proposed_plan" -> "assistant";
-                default -> "system";
+                case "assistant_message", "proposed_plan", "reasoning" -> "assistant";
+                default -> isTool(type) ? "tool" : "system";
             };
             messages.add(new Message(required(item, "itemId"), role, text, timestamp(item, "updatedAt"),
                     "running".equals(string(item, "status")), string(item, "messageId"),
                     present(item, "sourceThreadId") ? string(item, "sourceThreadId") : threadId,
-                    string(item, "runId"), "proposed_plan".equals(string(item, "type")) ? "proposed_plan" : string(item, "phase"), content.images(),
+                    string(item, "runId"), type.equals("assistant_message") ? string(item, "phase") : type, images,
                     missingAttachment ? MessageNotice.HIDDEN_ATTACHMENT : MessageNotice.NONE, flag(item, "textTruncated", false),
-                    present(item, "position") ? integer(item, "position") : -1));
+                    present(item, "position") ? integer(item, "position") : -1, reportedAttachments(item)));
         }
         return new Conversation(threadInfo(thread), List.copyOf(messages), integer(thread, "pendingRequestCount"), runTimings(result));
     }
 
-    /** Read a finished turn on demand. Activity pages arrive oldest first, even when paging backwards. */
+    private static int reportedAttachments(JsonObject item) {
+        try { return Math.max(0, Integer.parseInt(string(item, "attachmentCount"))); }
+        catch (NumberFormatException ignored) { return flag(item, "hasAttachments", false) ? -1 : 0; }
+    }
+
+    private static boolean isTool(String type) {
+        return switch (type) {
+            case "command_execution", "file_search", "file_change", "web_search", "tool_call", "mcp_tool_call",
+                    "dynamic_tool", "subagent", "todo_list", "function_call", "tool_result" -> true;
+            default -> type.endsWith("_tool_call");
+        };
+    }
+
+    /** Read a turn on demand. Activity pages arrive oldest first, even when paging backwards. */
     public List<ChatMessage> readWork(String threadId, String runId, int after, int before) throws IOException {
         var activity = new TreeMap<Integer, ChatMessage>();
         boolean foundRun = false;
@@ -225,6 +262,7 @@ public final class T3Api implements ChatImage.PageReader {
                     }
                     continue;
                 }
+                if (type.equals("checkpoint")) continue;
                 boolean narrative = switch (type) {
                     case "assistant_message", "reasoning", "proposed_plan" -> true;
                     default -> false;
@@ -236,10 +274,10 @@ public final class T3Api implements ChatImage.PageReader {
                 String title = string(item, "title");
                 if (body.isBlank()) body = title;
                 else if (!narrative && !title.isBlank() && !body.startsWith(title)) body = title + "\n" + body;
-                if (body.isBlank()) continue;
+                if (body.isBlank() && !isTool(type)) continue;
                 if (!narrative && flag(item, "textTruncated", false)) body += "…";
-                activity.put(position, new ChatMessage(id, narrative ? MessageRole.ASSISTANT : MessageRole.TOOL,
-                        body, timestamp(item, "updatedAt"), false, runId, type, List.of(), null, position));
+                activity.put(position, new ChatMessage(id, narrative ? MessageRole.ASSISTANT : isTool(type) ? MessageRole.TOOL : MessageRole.SYSTEM,
+                        body, timestamp(item, "updatedAt"), "running".equals(string(item, "status")), runId, type, List.of(), null, position));
             }
             if (reachedStart || !present(page, "earlierPosition")) break;
             before = first;

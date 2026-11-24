@@ -26,7 +26,7 @@ final class TranscriptTurns {
     record Turn(String key, @Nullable ChatMessage user, List<ChatMessage> work, List<ChatMessage> shown, boolean active,
                 long startedAt, long endedAt, String runId, int beforePosition) {
         boolean canLoadWork() {
-            return !active && !runId.isEmpty() && beforePosition >= 0;
+            return !runId.isEmpty() && beforePosition >= 0;
         }
 
         /** Keep the final response outside the disclosure and preserve previews already attached to messages. */
@@ -138,7 +138,7 @@ final class TranscriptTurns {
      */
     private static int finalIndex(List<ChatMessage> responses, boolean active) {
         for (int i = responses.size() - 1; i >= 0; i--) {
-            if (isFinalPhase(phase(responses.get(i)))) return i;
+            if (responses.get(i).role() == MessageRole.ASSISTANT && isFinalPhase(phase(responses.get(i)))) return i;
         }
         for (int i = responses.size() - 1; i >= 0; i--) {
             var message = responses.get(i);

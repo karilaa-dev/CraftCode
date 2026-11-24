@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'dev.craftcode'
-version = '0.13.2'
+version = '0.13.3'
 
 repositories {
     maven {
@@ -51,6 +51,9 @@ dependencies {
     ['common-lang', 'common-io', 'common-image'].each {
         include "com.twelvemonkeys.common:${it}:${imageIoVersion}"
     }
+
+    implementation 'org.xerial:sqlite-jdbc:3.54.1.0'
+    include 'org.xerial:sqlite-jdbc:3.54.1.0'
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'

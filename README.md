@@ -12,7 +12,7 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 
 | Finished turn | Snoozed threads | Snooze a thread |
 | --- | --- | --- |
-| [![Expanded Worked history showing progress updates, a command, and a file change above the final reply.](docs/images/worked.webp)](docs/images/worked.webp) | [![The expanded Snoozed section shows a thread due to wake in seven days.](docs/images/snoozed.webp)](docs/images/snoozed.webp) | [![Snooze duration choices of one hour, one day, or one week.](docs/images/snooze-menu.webp)](docs/images/snooze-menu.webp) |
+| [![An image and a file attachment above the caption, with thoughts and tool calls folded into single rows below.](docs/images/worked.webp)](docs/images/worked.webp) | [![The expanded Snoozed section shows a thread due to wake in seven days.](docs/images/snoozed.webp)](docs/images/snoozed.webp) | [![Snooze duration choices of one hour, one day, or one week.](docs/images/snooze-menu.webp)](docs/images/snooze-menu.webp) |
 
 | New thread draft | Server visibility and icons |
 | --- | --- |
@@ -21,6 +21,8 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 | Choose a model | Answer an agent question | Custom brown theme |
 | --- | --- | --- |
 | [![The model picker with two Codex models.](docs/images/model-picker.webp)](docs/images/model-picker.webp) | [![An agent asks which sign belongs above a station platform.](docs/images/agent-question.webp)](docs/images/agent-question.webp) | [![A village workshop conversation in a custom brown theme.](docs/images/custom-brown.webp)](docs/images/custom-brown.webp) |
+
+In a conversation, expand **Worked** to see progress messages in order. Click a tool summary to inspect its commands and results. Attachments appear above the caption as previews or named files. CraftCode can recover attachments omitted by MCP when Minecraft and the matching T3 desktop environment share the same data directory. On a remote-only connection, attachment visibility depends on the metadata the server sends and the images sent from this Minecraft instance.
 
 ## Installation
 

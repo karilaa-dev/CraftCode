@@ -28,13 +28,16 @@ class T3AttachmentsTest {
         try (var fixture = new Fixture("read", new byte[0])) {
             var messages = fixture.api.read("t").messages();
             assertEquals(T3Api.MessageNotice.EARLIER_HISTORY, messages.get(0).notice());
-            assertEquals("[Attachment]", messages.get(1).displayText(false));
-            assertEquals("[Attachment]", messages.get(1).displayText(true));
+            assertEquals("[Attachment]", messages.get(1).displayText(0));
+            assertEquals("[Attachment]", messages.get(1).displayText(1));
             assertEquals(T3Api.MessageNotice.HIDDEN_ATTACHMENT, messages.get(2).notice());
-            assertEquals("", messages.get(2).displayText(true));
-            assertFalse(messages.get(2).displayText(false).isBlank());
+            assertEquals("", messages.get(2).displayText(1));
+            assertFalse(messages.get(2).displayText(0).isBlank());
+            assertEquals("2 attachments\nTwo views", messages.get(4).displayText(0));
+            assertEquals("Two views", messages.get(4).displayText(2));
+            assertEquals("Attachments shared\nA reference", messages.get(5).displayText(0));
             assertEquals("Текст агента", messages.get(3).text());
-            assertTrue(messages.get(3).displayText(false).startsWith("Текст агента\n"));
+            assertTrue(messages.get(3).displayText(0).startsWith("Текст агента\n"));
         }
     }
 
@@ -160,7 +163,9 @@ class T3AttachmentsTest {
                              "earlierPosition":2,
                              "items":[{"itemId":"1","type":"user_message","text":"[Attachment]"},
                                       {"itemId":"2","type":"user_message","text":""},
-                                      {"itemId":"3","type":"assistant_message","text":"Текст агента","textTruncated":true}]}
+                                      {"itemId":"3","type":"assistant_message","text":"Текст агента","textTruncated":true},
+                                      {"itemId":"4","type":"user_message","text":"Two views","attachmentCount":2},
+                                      {"itemId":"5","type":"user_message","text":"A reference","hasAttachments":true}]}
                             """).getAsJsonObject();
                         case "t3_attachment_prepare_upload" -> {
                             calls.add("prepare");

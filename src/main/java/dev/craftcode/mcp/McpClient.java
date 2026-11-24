@@ -31,7 +31,7 @@ import java.util.function.Consumer;
 /** Blocking MCP operations. Call from a worker thread. Closing is safe from another thread. */
 public final class McpClient implements Closeable {
     private static final String PROTOCOL = "2025-11-25";
-    private static final String MOD_VERSION = "0.13.2";
+    private static final String MOD_VERSION = "0.13.3";
     private final HttpTransport wire;
     private final boolean interactive;
     private volatile String pendingPairingCode;

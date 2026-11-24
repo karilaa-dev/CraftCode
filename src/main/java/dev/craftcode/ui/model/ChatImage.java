@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
 import java.util.zip.ZipFile;
 
@@ -17,8 +19,9 @@ public record ChatImage(String name, String mimeType, long sizeBytes, Source sou
         public PreviewError(String message) { super(message); }
     }
 
-    public sealed interface Source permits Cached, Embedded, Web, Unavailable, PagedInline {}
+    public sealed interface Source permits Cached, Embedded, Web, Unavailable, PagedInline, Desktop {}
     public record Unavailable() implements Source {}
+    public record Desktop(Path file) implements Source {}
     public record Cached(Path receipt, String entry) implements Source {}
     public record Embedded(String base64) implements Source {
         @Override public String toString() { return "Inline chat image"; }
@@ -46,6 +49,22 @@ public record ChatImage(String name, String mimeType, long sizeBytes, Source sou
         mimeType = Objects.requireNonNullElse(mimeType, "");
     }
 
+    /** Pair each server entry with at most one local copy, even when several files share a name. */
+    public static List<ChatImage> merge(List<ChatImage> local, List<ChatImage> server) {
+        if (local.isEmpty()) return server;
+        if (server.isEmpty()) return local;
+        var unmatched = new ArrayList<>(local);
+        var merged = new ArrayList<ChatImage>();
+        for (var image : server) {
+            var match = unmatched.stream().filter(known -> known.name().equals(image.name())
+                    && (image.sizeBytes() < 0 || known.sizeBytes() == image.sizeBytes())).findFirst().orElse(null);
+            if (match != null) unmatched.remove(match);
+            merged.add(match != null && !(match.source() instanceof Unavailable) ? match : image);
+        }
+        merged.addAll(unmatched);
+        return List.copyOf(merged);
+    }
+
     @Override public String name() { return name.isBlank() ? L10n.tr("file.image", "Image") : name; }
     public boolean needsClick() { return source instanceof Web || source instanceof PagedInline; }
     public String host() { return source instanceof Web remote ? remote.url().getHost() : ""; }
@@ -62,6 +81,13 @@ public record ChatImage(String name, String mimeType, long sizeBytes, Source sou
                     bytes = input.readNBytes((int) sizeBytes + 1);
                     if (bytes.length != sizeBytes) throw new PreviewError(L10n.tr("chat.image.cache_incomplete", "Incomplete cached image."));
                 }
+            }
+        } else if (source instanceof Desktop desktop) {
+            if (sizeBytes <= 0 || sizeBytes > LocalImage.MAX_BYTES)
+                throw new PreviewError(L10n.tr("chat.image.exceeds_limit", "Image exceeds 10 MiB."));
+            try (InputStream input = java.nio.file.Files.newInputStream(desktop.file(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                bytes = input.readNBytes((int) sizeBytes + 1);
+                if (bytes.length != sizeBytes) throw new PreviewError(L10n.tr("chat.image.cache_incomplete", "Incomplete cached image."));
             }
         } else if (source instanceof Embedded || source instanceof PagedInline) {
             String data = source instanceof Embedded embedded ? embedded.base64() : remainingData((PagedInline) source);

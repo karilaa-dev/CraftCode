@@ -8,7 +8,7 @@ import net.minecraft.resources.Identifier;
 
 /** Icon-only composer controls retain the localized button label for narration and tooltips. */
 final class ComposerAction extends FlatButton {
-    private static final Identifier CLIP = Identifier.fromNamespaceAndPath("craftcode", "composer/paperclip");
+    static final Identifier PAPERCLIP = Identifier.fromNamespaceAndPath("craftcode", "composer/paperclip");
     private Icon symbol;
 
     ComposerAction(Position position, int size, String label, Icon symbol, PressAction press) {
@@ -44,7 +44,7 @@ final class ComposerAction extends FlatButton {
         int cy = getY() + getHeight() / 2 + (isPressedState() ? 1 : 0);
         int ink = isActive() ? Theme.ON_ACCENT : Theme.TEXT_DISABLED;
         switch (symbol) {
-            case IMAGE -> g.vanilla().blitSprite(RenderPipelines.GUI_TEXTURED, CLIP, cx - 4, cy - 4, 8, 8,
+            case IMAGE -> g.vanilla().blitSprite(RenderPipelines.GUI_TEXTURED, PAPERCLIP, cx - 4, cy - 4, 8, 8,
                     isActive() ? Theme.TEXT_SOFT : Theme.composerSecondaryText());
             case STOP -> UiIcons.stop(g, cx - 3, cy - 3, 0xFFFFFFFF);
             case NONE -> UiIcons.sendingDots(g, cx - 4, cy - 1, ink);

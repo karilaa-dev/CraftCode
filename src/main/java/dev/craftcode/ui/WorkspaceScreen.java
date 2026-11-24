@@ -252,8 +252,8 @@ public class WorkspaceScreen extends SpruceScreen {
                 }));
 
         // Unified sculpted composer dock
-        int dockLeft = mainX + pad;
-        int dockW = mainW - pad * 2;
+        int dockLeft = mainX + TranscriptView.panelLeft(mainW);
+        int dockW = TranscriptView.panelWidth(mainW);
         int sendRowY = this.height - 12 - DOCK_PAD - SEND_ROW;
         if (snap.drafting()) sendRowY = Math.min(sendRowY, (this.height + HEADER + COMPOSER_H) / 2 + 18);
         composerBottom = sendRowY + SEND_ROW + DOCK_PAD;
@@ -319,8 +319,8 @@ public class WorkspaceScreen extends SpruceScreen {
         if (this.chatPreviews == null) this.chatPreviews = new ChatImagePreviews();
         this.transcript = this.addRenderableWidget(new TranscriptView(Position.of(mainX, HEADER + 1), mainW,
                 Math.max(20, transcriptBottom - HEADER - 1), this.chatPreviews, this.transcriptState,
-                (id, turn) -> this.controller.loadWork(this.snapshot.settings().connections().generation(), id, turn.runId(),
-                        turn.user() == null ? -1 : turn.user().position(), turn.beforePosition())));
+                (id, turn, after) -> this.controller.loadWork(this.snapshot.settings().connections().generation(), id, turn.runId(),
+                        after, turn.beforePosition())));
 
         boolean sameThread = Objects.equals(threadId, this.displayedThreadId);
         this.displayedThreadId = threadId;

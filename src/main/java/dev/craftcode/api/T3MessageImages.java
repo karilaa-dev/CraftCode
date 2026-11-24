@@ -27,7 +27,7 @@ final class T3MessageImages {
         var images = new ArrayList<ChatImage>();
         if (item.get("attachments") instanceof com.google.gson.JsonArray descriptors) {
             for (JsonElement element : descriptors) {
-                if (!(element instanceof JsonObject image) || !"image".equals(T3Api.string(image, "type"))) continue;
+                if (!(element instanceof JsonObject image)) continue;
                 if (images.size() >= MAX_REFERENCES) break;
                 var destination = T3Api.string(image, "dataUrl");
                 if (destination.isEmpty()) destination = T3Api.string(image, "url");
@@ -35,7 +35,10 @@ final class T3MessageImages {
                 long size;
                 try { size = Long.parseLong(T3Api.string(image, "sizeBytes")); }
                 catch (NumberFormatException ignored) { size = -1; }
-                images.add(image(T3Api.string(image, "name"), T3Api.string(image, "mimeType"), size, destination, endpoint));
+                String name = T3Api.string(image, "name");
+                String mime = T3Api.string(image, "mimeType");
+                images.add("image".equals(T3Api.string(image, "type")) ? image(name, mime, size, destination, endpoint)
+                        : new ChatImage(name, mime, size, new ChatImage.Unavailable()));
             }
         }
         if (!text.contains("![")) return new Content(text, List.copyOf(images));

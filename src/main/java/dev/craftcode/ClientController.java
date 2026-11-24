@@ -649,6 +649,7 @@ public final class ClientController implements AutoCloseable {
                         throw new IOException(tr("net.workspace_routing", "This T3 server cannot route the workspace tools to a linked environment."));
                 }
                 api = new T3Api(wire, environmentId);
+                api.matchDesktop(capabilities.contains("t3_environment_read"));
                 monitor = new ThreadMonitor(api, this::notice, capabilities.contains("t3_pending_request"), api.enableEvents());
                 refresh();
                 worker.scheduleWithFixedDelay(() -> {
@@ -825,15 +826,12 @@ public final class ClientController implements AutoCloseable {
                 MessageRole role = switch (m.role()) {
                     case "user" -> MessageRole.USER;
                     case "assistant" -> MessageRole.ASSISTANT;
+                    case "tool" -> MessageRole.TOOL;
                     default -> MessageRole.SYSTEM;
                 };
-                var images = new ArrayList<ChatImage>();
-                if (role == MessageRole.USER) images.addAll(imageStore.get(profileId, environmentId, m.sourceThreadId(), m.messageId()));
-                for (var image : m.images()) {
-                    if (image.source() instanceof ChatImage.Unavailable && images.stream().anyMatch(c -> c.name().equals(image.name()))) continue;
-                    images.add(image);
-                }
-                String text = m.displayText(!images.isEmpty());
+                var receipts = role == MessageRole.USER ? imageStore.get(profileId, environmentId, m.sourceThreadId(), m.messageId()) : List.<ChatImage>of();
+                var images = ChatImage.merge(receipts, m.images());
+                String text = m.displayText(images.size());
                 messages.add(new ChatMessage(m.id(), role, text, m.createdAtMillis(), m.streaming(), m.runId(), m.phase(), images,
                         conversation.runTimings().get(m.runId()), m.position()));
             }

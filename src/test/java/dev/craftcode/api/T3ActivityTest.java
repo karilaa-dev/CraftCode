@@ -41,7 +41,9 @@ class T3ActivityTest {
                         case 12 -> """
                                 {"earlierPosition":8,"items":[
                                   {"position":8,"itemId":"cmd","runId":"r","type":"command_execution","text":"$ ls"},
-                                  {"position":9,"itemId":"reply","runId":"r","type":"assistant_message","text":"Done"}]}
+                                  {"position":9,"itemId":"reply","runId":"r","type":"assistant_message","text":"Done"},
+                                  {"position":10,"itemId":"check","runId":"r","type":"checkpoint","text":"[]"},
+                                  {"position":11,"itemId":"web","runId":"r","type":"web_search","text":""}]}
                                 """;
                         case 8 -> """
                                 {"earlierPosition":6,"items":[
@@ -73,9 +75,10 @@ class T3ActivityTest {
         try (var client = McpClient.http("http://127.0.0.1:" + server.getAddress().getPort() + "/mcp", "")) {
             var rows = new T3Api(client).readWork("thread", "r", -1, 12);
             assertEquals(List.of(12, 8, 6), cursors);
-            assertEquals(List.of("First step", "Last half", "Checked files", "$ ls", "Done"),
+            assertEquals(List.of("First step", "Last half", "Checked files", "$ ls", "Done", ""),
                     rows.stream().map(ChatMessage::text).toList());
             assertEquals(MessageRole.TOOL, rows.get(3).role());
+            assertEquals("web_search", rows.getLast().phase());
         } finally {
             server.stop(0);
         }

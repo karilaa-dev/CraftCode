@@ -1,6 +1,5 @@
 .gradle/
 build/
-art/provider-icons/variants.zip
 run/
 logs/
 crash-reports/
