@@ -18,13 +18,15 @@ import java.util.List;
 
 /**
  * Thread list across all projects, grouped like the T3 Code app by {@link ThreadOrganization}: an "In progress"
- * section (only when it has threads), the ordinary "Threads" section, then a collapsible "Settled" section with
+ * section (only when it has threads), the ordinary "Threads" section, then independently collapsible "Snoozed" and "Settled" sections with
  * compact rows. Each section is ordered by last activity, newest first. Full rows are two lines
  * (project badge + name + time, then title + status).
  */
 final class SidebarList extends ScrollableWidget {
     interface Actions {
         void selectThread(WorkspaceProject project, String threadId);
+
+        void toggleSnoozed();
 
         void toggleSettled();
 
@@ -36,7 +38,7 @@ final class SidebarList extends ScrollableWidget {
     private static final int COMPACT = 15;
     private static final int HEADER = 18;
 
-    private enum Kind { SECTION, THREAD, SETTLED_HEADER, SETTLED_THREAD, MORE }
+    private enum Kind { SECTION, THREAD, SNOOZED_HEADER, SETTLED_HEADER, COMPACT_THREAD, MORE }
 
     private record Entry(WorkspaceProject project, ThreadSummary thread) {}
 
@@ -51,6 +53,8 @@ final class SidebarList extends ScrollableWidget {
     private ConnectionsView connections;
     private String emptyText = "";
     private @Nullable String selectedThreadId;
+    private boolean snoozedExpanded;
+    private int snoozedCount;
     private boolean settledExpanded;
     private int settledCount;
     private int hiddenSettled;
@@ -66,15 +70,17 @@ final class SidebarList extends ScrollableWidget {
             .thenComparing(ThreadSummary::id);
 
     void setData(List<WorkspaceProject> projects, ConnectionsView connections, String query,
-                 @Nullable String selectedThreadId, boolean settledExpanded, int settledLimit, String emptyText) {
+                 @Nullable String selectedThreadId, boolean snoozedExpanded, boolean settledExpanded, int settledLimit, String emptyText) {
         this.rows.clear();
         this.connections = connections;
         this.selectedThreadId = selectedThreadId;
+        this.snoozedExpanded = snoozedExpanded;
         this.settledExpanded = settledExpanded;
         this.emptyText = emptyText;
 
         var inProgress = new ArrayList<Entry>();
         var normal = new ArrayList<Entry>();
+        var snoozed = new ArrayList<Entry>();
         var settled = new ArrayList<Entry>();
         var entries = new ArrayList<Entry>();
         for (var project : projects) {
@@ -89,6 +95,7 @@ final class SidebarList extends ScrollableWidget {
         for (var entry : entries) {
             switch (entry.thread().organization()) {
                 case IN_PROGRESS -> inProgress.add(entry);
+                case SNOOZED -> snoozed.add(entry);
                 case SETTLED -> settled.add(entry);
                 case NORMAL -> normal.add(entry);
             }
@@ -98,6 +105,20 @@ final class SidebarList extends ScrollableWidget {
         int y = 2;
         y = this.section(y, L10n.tr("chat.sidebar.in_progress", "In progress"), inProgress);
         y = this.section(y, L10n.tr("chat.sidebar.threads", "Threads"), normal);
+        this.snoozedCount = snoozed.size();
+        if (!snoozed.isEmpty()) {
+            y += this.rows.isEmpty() ? 0 : 4;
+            this.rows.add(new Row(Kind.SNOOZED_HEADER, null, y, HEADER));
+            y += HEADER;
+            if (snoozedExpanded) {
+                snoozed.sort(Comparator.comparingLong(e -> e.thread().snoozedUntilMillis() > 0
+                        ? e.thread().snoozedUntilMillis() : Long.MAX_VALUE));
+                for (var entry : snoozed) {
+                    this.rows.add(new Row(Kind.COMPACT_THREAD, entry, y, COMPACT));
+                    y += COMPACT;
+                }
+            }
+        }
         this.hiddenSettled = 0;
         if (!settled.isEmpty()) {
             y += this.rows.isEmpty() ? 0 : 4;
@@ -106,7 +127,7 @@ final class SidebarList extends ScrollableWidget {
             if (settledExpanded) {
                 int shown = Math.min(settled.size(), Math.max(settledLimit, SETTLED_PAGE));
                 for (int i = 0; i < shown; i++) {
-                    this.rows.add(new Row(Kind.SETTLED_THREAD, settled.get(i), y, COMPACT));
+                    this.rows.add(new Row(Kind.COMPACT_THREAD, settled.get(i), y, COMPACT));
                     y += COMPACT;
                 }
                 this.hiddenSettled = settled.size() - shown;
@@ -150,7 +171,8 @@ final class SidebarList extends ScrollableWidget {
         if (row == null || row.kind() == Kind.SECTION) return false;
         this.playDownSound();
         switch (row.kind()) {
-            case THREAD, SETTLED_THREAD -> this.actions.selectThread(row.entry().project(), row.entry().thread().id());
+            case THREAD, COMPACT_THREAD -> this.actions.selectThread(row.entry().project(), row.entry().thread().id());
+            case SNOOZED_HEADER -> this.actions.toggleSnoozed();
             case SETTLED_HEADER -> this.actions.toggleSettled();
             case SECTION -> { }
             case MORE -> this.actions.showMoreSettled();
@@ -223,14 +245,15 @@ final class SidebarList extends ScrollableWidget {
 
             switch (row.kind()) {
                 case THREAD -> this.drawThread(graphics, font, row.entry(), left, right, y, hovered);
-                case SETTLED_THREAD -> this.drawSettled(graphics, font, row.entry(), left, right, y, hovered);
+                case COMPACT_THREAD -> this.drawCompact(graphics, font, row.entry(), left, right, y, hovered);
                 case SECTION -> { }
-                case SETTLED_HEADER -> {
+                case SNOOZED_HEADER, SETTLED_HEADER -> {
+                    boolean snoozed = row.kind() == Kind.SNOOZED_HEADER;
                     if (hovered) graphics.fill(left, y, right, y + h, Theme.HOVER);
                     int textY = y + (h - font.lineHeight) / 2 + 1;
-                    graphics.text(font, L10n.tr("chat.sidebar.settled", "Settled"), left + 6, textY, Theme.MUTED, false);
-                    String chevron = this.settledExpanded ? "▾" : "▸";
-                    String count = Integer.toString(this.settledCount);
+                    graphics.text(font, snoozed ? L10n.tr("chat.sidebar.snoozed", "Snoozed") : L10n.tr("chat.sidebar.settled", "Settled"), left + 6, textY, Theme.MUTED, false);
+                    String chevron = (snoozed ? this.snoozedExpanded : this.settledExpanded) ? "▾" : "▸";
+                    String count = Integer.toString(snoozed ? this.snoozedCount : this.settledCount);
                     graphics.text(font, chevron, right - 4 - font.width(chevron), textY, Theme.FAINT, false);
                     graphics.text(font, count, right - 10 - font.width(chevron) - font.width(count), textY, Theme.FAINT, false);
                 }
@@ -252,7 +275,7 @@ final class SidebarList extends ScrollableWidget {
         int start = -1;
         int end = -1;
         for (var row : this.rows) {
-            boolean opens = row.kind() == Kind.SECTION || row.kind() == Kind.SETTLED_HEADER;
+            boolean opens = row.kind() == Kind.SECTION || row.kind() == Kind.SNOOZED_HEADER || row.kind() == Kind.SETTLED_HEADER;
             if (opens && start >= 0) {
                 Theme.sheet(graphics, left - 2, top + start - 1, right + 2, top + end + 1, Theme.SIDEBAR_SHEET);
                 start = -1;
@@ -306,7 +329,7 @@ final class SidebarList extends ScrollableWidget {
         graphics.text(font, title, left + 6, line2, selected ? Theme.TEXT : Theme.TEXT_SOFT, false);
     }
 
-    private void drawSettled(SpruceGuiGraphics graphics, Font font, Entry entry, int left, int right, int y,
+    private void drawCompact(SpruceGuiGraphics graphics, Font font, Entry entry, int left, int right, int y,
                              boolean hovered) {
         var thread = entry.thread();
         boolean selected = entry.project().source().matches(connections) && thread.id().equals(this.selectedThreadId);
@@ -317,10 +340,22 @@ final class SidebarList extends ScrollableWidget {
         int x = left + 6;
         graphics.text(font, initials, x, textY, Theme.FAINT, false);
         x += font.width("WW") + 4;
-        String time = Theme.relativeTime(thread.updatedAtMillis());
-        int timeW = time.isEmpty() ? 0 : font.width(time) + 4;
+        boolean snoozed = thread.organization() == ThreadOrganization.SNOOZED;
+        String time = snoozed ? Theme.timeUntil(thread.snoozedUntilMillis(), System.currentTimeMillis())
+                : Theme.relativeTime(thread.updatedAtMillis());
+        int clockWidth = snoozed ? 10 : 0;
+        int timeW = clockWidth + (time.isEmpty() ? 0 : font.width(time) + 4);
+        if (snoozed) {
+            int cx = right - 5 - font.width(time) - clockWidth;
+            int cy = textY;
+            Theme.outline(graphics, cx + 1, cy + 1, 6, 6, Theme.ACCENT);
+            graphics.fill(cx, cy, cx + 2, cy + 1, Theme.ACCENT);
+            graphics.fill(cx + 6, cy, cx + 8, cy + 1, Theme.ACCENT);
+            graphics.fill(cx + 3, cy + 2, cx + 4, cy + 5, Theme.ACCENT);
+            graphics.fill(cx + 4, cy + 4, cx + 5, cy + 5, Theme.ACCENT);
+        }
         String title = Theme.ellipsize(font, Theme.orDefault(thread.title(), L10n.tr("chat.thread.untitled", "New thread")), right - 5 - timeW - x);
         graphics.text(font, title, x, textY, selected ? Theme.TEXT : Theme.MUTED, false);
-        if (!time.isEmpty()) graphics.text(font, time, right - 5 - font.width(time), textY, Theme.FAINT, false);
+        if (!time.isEmpty()) graphics.text(font, time, right - 5 - font.width(time), textY, snoozed ? Theme.ACCENT : Theme.FAINT, false);
     }
 }

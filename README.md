@@ -8,15 +8,19 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 
 ## Screenshots
 
-![The unified thread list and a village workshop conversation in Minecraft.](docs/images/workspace.webp)
+![A village workshop conversation with Snoozed and Settled collapsed in the sidebar.](docs/images/workspace.webp)
+
+| Snoozed threads | Snooze a thread |
+| --- | --- |
+| [![The expanded Snoozed section shows a thread due to wake in seven days.](docs/images/snoozed.webp)](docs/images/snoozed.webp) | [![Snooze duration choices of one hour, one day, or one week.](docs/images/snooze-menu.webp)](docs/images/snooze-menu.webp) |
 
 | New thread draft | Server visibility and icons |
 | --- | --- |
 | [![An unsent draft in the project composer.](docs/images/new-thread.webp)](docs/images/new-thread.webp) | [![Saved servers and linked environments in Settings.](docs/images/servers.webp)](docs/images/servers.webp) |
 
-| Choose a model | Answer an agent question | Customize a theme |
+| Choose a model | Answer an agent question | Custom brown theme |
 | --- | --- | --- |
-| [![The model picker with two Codex models.](docs/images/model-picker.webp)](docs/images/model-picker.webp) | [![An agent asks which sign belongs above a station platform.](docs/images/agent-question.webp)](docs/images/agent-question.webp) | [![A custom brown palette in the theme editor.](docs/images/custom-brown.webp)](docs/images/custom-brown.webp) |
+| [![The model picker with two Codex models.](docs/images/model-picker.webp)](docs/images/model-picker.webp) | [![An agent asks which sign belongs above a station platform.](docs/images/agent-question.webp)](docs/images/agent-question.webp) | [![A village workshop conversation in a custom brown theme.](docs/images/custom-brown.webp)](docs/images/custom-brown.webp) |
 
 ## Installation
 

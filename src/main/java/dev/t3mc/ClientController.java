@@ -442,6 +442,28 @@ public final class ClientController implements AutoCloseable {
         });
         return result;
     }
+    public synchronized boolean supportsSnooze() {
+        return session != null && session.capabilities.contains("t3_thread_organize");
+    }
+
+    private boolean canSnooze(String threadId) {
+        return canEditThread(session, threadId) && !snapshot.drafting()
+                && snapshot.selectedThread().organization() != ThreadOrganization.SETTLED
+                && supportsSnooze();
+    }
+
+    public synchronized void setSnooze(long generation, String threadId, java.time.Instant until) {
+        if (generation != connectionGeneration || !canSnooze(threadId)) return;
+        submit(s -> {
+            synchronized (ClientController.this) {
+                if (generation != connectionGeneration || !canSnooze(threadId)) return;
+            }
+            s.api.setSnooze(threadId, until);
+            s.lastDetail = null;
+            s.refresh();
+        });
+    }
+
     public void interruptThread(String threadId) {
         submit(s -> { s.api.interrupt(threadId, UUID.randomUUID().toString()); s.refresh(); });
     }
@@ -680,7 +702,7 @@ public final class ClientController implements AutoCloseable {
                 boolean hasPendingInput = monitor.hasPendingInput(thread.id());
                 grouped.computeIfAbsent(thread.projectId(), k -> new ArrayList<>()).add(new ThreadSummary(
                         thread.id(), thread.projectId(), thread.title(), thread.status(hasPendingInput), hasQuestion,
-                        thread.updatedAtMillis(), thread.organization(hasPendingInput)));
+                        thread.updatedAtMillis(), thread.organization(hasPendingInput), thread.snoozedUntilMillis()));
             }
             sidebar = projects.stream().map(p -> new ProjectView(p.id(), p.title(), p.path(), grouped.getOrDefault(p.id(), List.of()))).toList();
             if (draftKey == null && selected != null && selectedInfo == null) {

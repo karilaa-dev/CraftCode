@@ -19,7 +19,9 @@ class ThreadOrganizationTest {
         for (var status : List.of("idle", "completed", "interrupted", "cancelled", "rolled_back", "failed"))
             assertEquals(NORMAL, thread(status, false, false, false).organization(false));
         assertEquals(NORMAL, thread("running", false, true, false).organization(false));
-        assertEquals(NORMAL, thread("running", false, false, true).organization(false));
+        assertEquals(SNOOZED, thread("running", false, false, true).organization(false));
+        assertEquals(SNOOZED, thread("completed", false, true, true).organization(true));
+        assertEquals(SETTLED, thread("idle", true, false, true).organization(false));
     }
 
     @Test void explicitSettlementSurvivesRunStatusAndModelChanges() {
@@ -32,6 +34,6 @@ class ThreadOrganizationTest {
     }
 
     private static T3Api.ThreadInfo thread(String status, boolean settled, boolean pinned, boolean snoozed) {
-        return new T3Api.ThreadInfo("one", "project", "Title", status, "run", 123, settled, "p", "m", pinned, snoozed);
+        return new T3Api.ThreadInfo("one", "project", "Title", status, "run", 123, settled, "p", "m", pinned, snoozed, 0);
     }
 }

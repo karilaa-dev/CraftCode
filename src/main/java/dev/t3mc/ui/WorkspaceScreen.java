@@ -12,6 +12,7 @@ import dev.t3mc.ui.model.PendingQuestion;
 import dev.t3mc.ui.model.ProjectView;
 import dev.t3mc.ui.model.ThreadDetail;
 import dev.t3mc.ui.model.ThreadStatus;
+import dev.t3mc.ui.model.ThreadOrganization;
 import dev.t3mc.ui.model.WorkspaceSnapshot;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -58,6 +59,8 @@ public class WorkspaceScreen extends SpruceScreen {
     private Map<String, String> composerDrafts;
     private final Map<String, String> answerDrafts = new HashMap<>();
     private final Map<String, Set<String>> multiSelections = new HashMap<>();
+    private boolean snoozedExpanded;
+    private boolean snoozedSearchCollapsed;
     private boolean settledExpanded;
     private int settledLimit = SidebarList.SETTLED_PAGE;
     /** Project picker for "+ New thread" is open in place of the thread list. */
@@ -127,6 +130,7 @@ public class WorkspaceScreen extends SpruceScreen {
     private ModelChip modelButton;
     private FlatButton attachButton;
     private @Nullable AttachmentStrip attachmentStrip;
+    private FlatButton snoozeButton;
     private FlatButton stopButton;
     private FlatButton connectButton;
 
@@ -172,7 +176,10 @@ public class WorkspaceScreen extends SpruceScreen {
         search.setText(filtering || pickingProject ? projectQuery : query);
         search.setChangedListener(text -> {
             if (filtering || pickingProject) projectQuery = text;
-            else query = text;
+            else {
+                if (!text.equals(query)) snoozedSearchCollapsed = false;
+                query = text;
+            }
             sidebar.setScroll(0);
             picker.setScroll(0);
             refreshSidebar();
@@ -194,6 +201,13 @@ public class WorkspaceScreen extends SpruceScreen {
             @Override
             public void selectThread(WorkspaceProject project, String threadId) {
                 controller.openThread(project.source(), threadId);
+            }
+
+            @Override
+            public void toggleSnoozed() {
+                if (query.isBlank()) snoozedExpanded = !snoozedExpanded;
+                else snoozedSearchCollapsed = !snoozedSearchCollapsed;
+                refreshSidebar();
             }
 
             @Override
@@ -223,6 +237,9 @@ public class WorkspaceScreen extends SpruceScreen {
             if (current != null) this.controller.onConnection(snapshot.settings().connections().generation(),
                     () -> controller.interruptThread(current.id()));
         }));
+        int snoozeW = Math.max(font.width(snoozeLabel(false)), font.width(snoozeLabel(true))) + 10;
+        this.snoozeButton = addRenderableWidget(new FlatButton(Position.of(width - pad - snoozeW, 8), snoozeW, 16,
+                snoozeLabel(false), b -> changeSnooze()));
         int connectW = Math.max(64, Math.max(this.font.width(reconnectLabel()), this.font.width(connectLabel())) + 10);
         this.connectButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - connectW, 8), connectW, 16,
                 reconnectLabel(),
@@ -430,6 +447,12 @@ public class WorkspaceScreen extends SpruceScreen {
         this.refreshModelChip(snap, canType && !sending);
         boolean running = detail != null && detail.status() == ThreadStatus.RUNNING;
         this.stopButton.setVisible(writable && running);
+        boolean snoozed = detail != null && detail.organization() == ThreadOrganization.SNOOZED;
+        snoozeButton.setVisible(writable && detail != null && !snap.drafting()
+                && detail.organization() != ThreadOrganization.SETTLED && controller.supportsSnooze());
+        snoozeButton.setLabel(snoozeLabel(snoozed));
+        snoozeButton.getPosition().setRelativeX(width - 12 - snoozeButton.getWidth()
+                - (stopButton.isVisible() ? stopButton.getWidth() + 4 : 0));
         var state = snap.connection().state();
         this.connectButton.setVisible(state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED);
         this.connectButton.setLabel(state == ConnectionState.ERROR ? reconnectLabel() : connectLabel());
@@ -446,6 +469,21 @@ public class WorkspaceScreen extends SpruceScreen {
         for (var project : snap.projects()) for (var thread : project.threads()) threads.add(thread.id());
         if (detail != null) threads.add(detail.id());
         if (connected) this.models.retainThreads(threads);
+    }
+
+    private static String snoozeLabel(boolean snoozed) {
+        return snoozed ? L10n.tr("snooze.wake", "Unsnooze") : L10n.tr("snooze.action", "Snooze…");
+    }
+
+    private void changeSnooze() {
+        var thread = snapshot.selectedThread();
+        if (thread == null) return;
+        long generation = snapshot.settings().connections().generation();
+        if (thread.organization() == ThreadOrganization.SNOOZED) {
+            controller.setSnooze(generation, thread.id(), null);
+        } else {
+            minecraft.gui.setScreen(new SnoozeScreen(this, until -> controller.setSnooze(generation, thread.id(), until)));
+        }
     }
 
     private static String sendLabel() { return L10n.tr("chat.composer.send", "Send"); }
@@ -553,7 +591,7 @@ public class WorkspaceScreen extends SpruceScreen {
         var filtered = projects.stream().filter(p -> projectFilter == null || projectFilter.equals(p.key())).toList();
         boolean searching = !query.isBlank();
         this.sidebar.setData(filtered, snap.settings().connections(), query, snap.selectedThreadId(),
-                settledExpanded || searching, settledLimit, searching || projectFilter != null
+                searching ? !snoozedSearchCollapsed : snoozedExpanded, settledExpanded || searching, settledLimit, searching || projectFilter != null
                         ? L10n.tr("sidebar.no_matches", "No matching threads") : empty);
         if (pickingProject) {
             for (var source : snap.environments()) {
@@ -983,7 +1021,7 @@ public class WorkspaceScreen extends SpruceScreen {
 
         // Main header: thread title, status and project
         int mainX = sw + 1 + 12;
-        int rightLimit = this.width - 12 - (this.stopButton.isVisible() ? this.stopButton.getWidth() + 6 : 0)
+        int rightLimit = this.width - 12 - (snoozeButton.isVisible() ? snoozeButton.getWidth() + 6 : 0) - (this.stopButton.isVisible() ? this.stopButton.getWidth() + 6 : 0)
                 - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 6 : 0);
         var detail = snap.selectedThread();
         if (detail != null) {

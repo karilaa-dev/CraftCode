@@ -25,6 +25,15 @@ class ThemeTest {
         }
     }
 
+    @Test void snoozeCountdownRoundsUpAndHandlesMissingAndElapsedWakeTimes() {
+        long now = 1_000;
+        assertEquals("", Theme.timeUntil(0, now));
+        assertEquals("now", Theme.timeUntil(now, now));
+        assertEquals("1m", Theme.timeUntil(now + 1, now));
+        assertEquals("1h", Theme.timeUntil(now + 3_600_000, now));
+        assertEquals("7d", Theme.timeUntil(now + 7 * 86_400_000L - 1_000, now));
+    }
+
     private static SettingsView custom(ColorTheme.Palette palette) {
         return new SettingsView("", false, NotificationMode.CHAT, ColorTheme.CUSTOM,
                 SettingsView.DEFAULT_TRANSPARENCY, ConnectionsView.empty(), palette);

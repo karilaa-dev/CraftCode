@@ -3,11 +3,11 @@ package dev.t3mc.ui.model;
 import java.util.Objects;
 
 public record ThreadSummary(String id, String projectId, String title, ThreadStatus status,
-                            boolean hasPendingQuestion, long updatedAtMillis, ThreadOrganization organization) {
+                            boolean hasPendingQuestion, long updatedAtMillis, ThreadOrganization organization, long snoozedUntilMillis) {
     public ThreadSummary(String id, String projectId, String title, ThreadStatus status,
                          boolean hasPendingQuestion, long updatedAtMillis, boolean settled) {
         this(id, projectId, title, status, hasPendingQuestion, updatedAtMillis,
-                ThreadOrganization.from(settled, hasPendingQuestion ? ThreadStatus.WAITING_FOR_INPUT : status));
+                ThreadOrganization.from(settled, hasPendingQuestion ? ThreadStatus.WAITING_FOR_INPUT : status), 0);
     }
 
     public boolean settled() { return organization == ThreadOrganization.SETTLED; }

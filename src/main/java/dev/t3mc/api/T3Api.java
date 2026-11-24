@@ -30,10 +30,10 @@ public final class T3Api implements ChatImage.PageReader {
     public record Project(String id, String title, String path) {}
     public record ThreadInfo(String id, String projectId, String title, String status, String runId,
                              long updatedAtMillis, boolean settled, String providerId, String modelId,
-                             boolean pinned, boolean snoozed) {
+                             boolean pinned, boolean snoozed, long snoozedUntilMillis) {
         public ThreadInfo(String id, String projectId, String title, String status, String runId,
                           long updatedAtMillis, boolean settled) {
-            this(id, projectId, title, status, runId, updatedAtMillis, settled, "", "", false, false);
+            this(id, projectId, title, status, runId, updatedAtMillis, settled, "", "", false, false, 0);
         }
 
         public ThreadStatus status(boolean hasPendingInput) {
@@ -41,8 +41,8 @@ public final class T3Api implements ChatImage.PageReader {
         }
 
         public ThreadOrganization organization(boolean hasPendingInput) {
-            // Desktop places pinned and snoozed threads in their own sections outside Working.
-            if (!settled && (pinned || snoozed)) return ThreadOrganization.NORMAL;
+            if (!settled && snoozed) return ThreadOrganization.SNOOZED;
+            if (!settled && pinned) return ThreadOrganization.NORMAL;
             return ThreadOrganization.from(settled, status(hasPendingInput));
         }
     }
@@ -399,6 +399,13 @@ public final class T3Api implements ChatImage.PageReader {
         return T3Attachments.send(this, threadId, caption, images, capture);
     }
 
+    public void setSnooze(String threadId, Instant until) throws IOException {
+        JsonObject args = threadArgs(threadId);
+        args.addProperty("action", until == null ? "unsnooze" : "snooze");
+        if (until != null) args.addProperty("snoozedUntil", until.toString());
+        call("t3_thread_organize", args);
+    }
+
     public void interrupt(String threadId, String clientRequestId) throws IOException {
         JsonObject args = threadArgs(threadId);
         args.addProperty("clientRequestId", clientRequestId);
@@ -425,7 +432,8 @@ public final class T3Api implements ChatImage.PageReader {
     private static ThreadInfo threadInfo(JsonObject row) throws IOException {
         return new ThreadInfo(required(row, "threadId"), required(row, "projectId"), string(row, "title"),
                 required(row, "status"), string(row, "latestRunId"), timestamp(row, "updatedAt"), flag(row, "settled", false),
-                string(row, "providerInstanceId"), string(row, "model"), flag(row, "pinned", false), flag(row, "snoozed", false));
+                string(row, "providerInstanceId"), string(row, "model"), flag(row, "pinned", false), flag(row, "snoozed", false),
+                timestamp(row, "snoozedUntil"));
     }
 
     private static JsonObject threadArgs(String id) {

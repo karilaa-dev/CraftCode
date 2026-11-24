@@ -336,6 +336,15 @@ final class Theme {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    static String timeUntil(long until, long now) {
+        if (until <= 0) return "";
+        long remaining = until - now;
+        if (remaining <= 0) return tr("time.now", "now");
+        if (remaining < 3_600_000L) return tr("time.minutes", "%sm", Math.ceilDiv(remaining, 60_000L));
+        if (remaining < 86_400_000L) return tr("time.hours", "%sh", Math.ceilDiv(remaining, 3_600_000L));
+        return tr("time.days", "%sd", Math.ceilDiv(remaining, 86_400_000L));
+    }
+
     static String relativeTime(long millis) {
         if (millis <= 0) return "";
         long seconds = Math.max(0, (System.currentTimeMillis() - millis) / 1000);
