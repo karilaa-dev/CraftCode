@@ -30,7 +30,7 @@ The resampler credits Dale Schumacher's public-domain Graphics Gems example and 
 
 | Artwork | Credit |
 | --- | --- |
-| T3 mod icon | Pixel adaptation of the T3 monogram. T3 Code is copyright © 2026 T3 Tools Inc. See `t3-code.txt`. [T3 Code](https://github.com/pingdotgg/t3code) |
+| CraftCode mod and Modrinth icon | “Communication terminal, 32x32” by MoikMellah (2012), dedicated to the public domain under CC0. The icon uses the eighth frame of the artist’s animated preview, enlarged with nearest-neighbor scaling. [Original artwork and source](https://opengameart.org/content/communication-terminal-32x32) · [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | Default ChatGPT provider icon | Shuqi Khor, Pixel Icons, MIT. See `pixel-icons.txt`. [Original icon](https://sqkhor.com/pixel-icons/chatgpt) |
 | Claude Code, OpenCode, Antigravity and Cursor provider icons and the optional ChatGPT/Codex variants | Pixel adaptations of reference marks from Lobe Icons 1.106.0, copyright © 2023 LobeHub, MIT. See `lobe-icons.txt`. [Lobe Icons source](https://github.com/lobehub/lobe-icons/tree/c9236c6735763f2778e7ca759488f9a486450249/packages/static-svg/icons) |
 
