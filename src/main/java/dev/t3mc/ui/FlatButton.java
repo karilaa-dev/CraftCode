@@ -4,12 +4,14 @@ import dev.lambdaurora.spruceui.Position;
 import dev.lambdaurora.spruceui.render.SpruceGuiGraphics;
 import dev.lambdaurora.spruceui.widget.SpruceButtonWidget;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
 /** A flat, borderless button in the T3 palette. */
 class FlatButton extends SpruceButtonWidget {
     enum Kind { NORMAL, PRIMARY, DANGER, SELECTED }
 
     private Kind kind;
+    private @Nullable String compactLabel;
 
     FlatButton(Position position, int width, int height, String label, Kind kind, PressAction action) {
         super(position, width, height, Component.literal(label), action);
@@ -25,7 +27,12 @@ class FlatButton extends SpruceButtonWidget {
     }
 
     void setLabel(String label) {
+        this.setLabel(label, null);
+    }
+
+    void setLabel(String label, @Nullable String compactLabel) {
         this.setMessage(Component.literal(label));
+        this.compactLabel = compactLabel;
     }
 
     @Override
@@ -63,7 +70,10 @@ class FlatButton extends SpruceButtonWidget {
             default -> Theme.BUTTON_TEXT;
         };
         var font = this.client.font;
-        String label = Theme.ellipsize(font, this.getMessage().getString(), this.getWidth() - 4);
+        int availableWidth = this.getWidth() - 4;
+        String fullLabel = this.getMessage().getString();
+        String label = this.compactLabel != null && font.width(fullLabel) > availableWidth ? this.compactLabel : fullLabel;
+        label = Theme.ellipsize(font, label, availableWidth);
         graphics.text(font, label, this.getX() + (this.getWidth() - font.width(label)) / 2,
                 this.getY() + (this.getHeight() - font.lineHeight) / 2 + 1, themed, false);
     }

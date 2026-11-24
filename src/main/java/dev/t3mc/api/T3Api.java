@@ -9,9 +9,12 @@ import dev.t3mc.mcp.McpClient;
 import dev.t3mc.ui.model.LinkedEnvironmentView;
 import dev.t3mc.ui.model.LocalImage;
 import dev.t3mc.ui.model.ChatImage;
+import dev.t3mc.ui.model.ChatMessage;
 import dev.t3mc.ui.model.ChatMessage.RunTiming;
+import dev.t3mc.ui.model.MessageRole;
 import dev.t3mc.ui.model.ModelProvider;
 import dev.t3mc.ui.model.ModelSelection;
+import dev.t3mc.ui.model.ThreadAction;
 import dev.t3mc.ui.model.ThreadOrganization;
 import dev.t3mc.ui.model.ThreadStatus;
 
@@ -24,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** Typed access to the tools exposed by a T3 Code environment's MCP server. */
 public final class T3Api implements ChatImage.PageReader {
@@ -55,7 +59,7 @@ public final class T3Api implements ChatImage.PageReader {
     public enum MessageNotice { NONE, EARLIER_HISTORY, HIDDEN_ATTACHMENT }
     public record Message(String id, String role, String text, long createdAtMillis, boolean streaming, String messageId,
                           String sourceThreadId, String runId, String phase, List<ChatImage> images,
-                          MessageNotice notice, boolean truncated) {
+                          MessageNotice notice, boolean truncated, int position) {
         public String displayText(boolean hasImages) {
             String body = switch (notice) {
                 case NONE -> text;
@@ -154,7 +158,7 @@ public final class T3Api implements ChatImage.PageReader {
         List<Message> messages = new ArrayList<>();
         if (present(result, "earlierPosition")) {
             messages.add(new Message("t3mc-history", "system", "", 0, false, "", threadId, "", "", List.of(),
-                    MessageNotice.EARLIER_HISTORY, false));
+                    MessageNotice.EARLIER_HISTORY, false, -1));
         }
         for (JsonElement entry : array(result, "items")) {
             JsonObject item = object(entry, "items");
@@ -170,16 +174,100 @@ public final class T3Api implements ChatImage.PageReader {
             // MCP-sent user messages can have createdBy="agent". Type identifies the chat role.
             String role = switch (string(item, "type")) {
                 case "user_message" -> "user";
-                case "assistant_message" -> "assistant";
+                case "assistant_message", "proposed_plan" -> "assistant";
                 default -> "system";
             };
             messages.add(new Message(required(item, "itemId"), role, text, timestamp(item, "updatedAt"),
                     "running".equals(string(item, "status")), string(item, "messageId"),
                     present(item, "sourceThreadId") ? string(item, "sourceThreadId") : threadId,
-                    string(item, "runId"), string(item, "phase"), content.images(),
-                    missingAttachment ? MessageNotice.HIDDEN_ATTACHMENT : MessageNotice.NONE, flag(item, "textTruncated", false)));
+                    string(item, "runId"), "proposed_plan".equals(string(item, "type")) ? "proposed_plan" : string(item, "phase"), content.images(),
+                    missingAttachment ? MessageNotice.HIDDEN_ATTACHMENT : MessageNotice.NONE, flag(item, "textTruncated", false),
+                    present(item, "position") ? integer(item, "position") : -1));
         }
         return new Conversation(threadInfo(thread), List.copyOf(messages), integer(thread, "pendingRequestCount"), runTimings(result));
+    }
+
+    /** Read a finished turn on demand. Activity pages arrive oldest first, even when paging backwards. */
+    public List<ChatMessage> readWork(String threadId, String runId, int after, int before) throws IOException {
+        var activity = new TreeMap<Integer, ChatMessage>();
+        boolean foundRun = false;
+        var args = threadArgs(threadId);
+        args.addProperty("view", "activity");
+        args.addProperty("limit", 100);
+        args.addProperty("runLimit", 1);
+        args.addProperty("maxCharsPerItem", 2048);
+        while (before > after) {
+            args.addProperty("beforePosition", before);
+            var page = call("t3_thread_read", args);
+            var items = array(page, "items");
+            if (items.isEmpty()) break;
+            int first = integer(object(items.get(0), "items[]"), "position");
+            if (first >= before) throw malformed("items[].position");
+            boolean reachedStart = first <= after;
+            for (int i = items.size() - 1; i >= 0; i--) {
+                var item = object(items.get(i), "items[]");
+                int position = integer(item, "position");
+                if (position <= after || position >= before) continue;
+                String type = string(item, "type");
+                if (!runId.equals(string(item, "runId"))) {
+                    // When the user message fell outside the messages page, the prior run bounds this turn.
+                    if (after < 0 && foundRun && !string(item, "runId").isEmpty()) {
+                        reachedStart = true;
+                        break;
+                    }
+                    continue;
+                }
+                foundRun = true;
+                if ("user_message".equals(type)) {
+                    if (after < 0) {
+                        reachedStart = true;
+                        break;
+                    }
+                    continue;
+                }
+                boolean narrative = switch (type) {
+                    case "assistant_message", "reasoning", "proposed_plan" -> true;
+                    default -> false;
+                };
+                String id = required(item, "itemId");
+                String body = string(item, "text");
+                if (narrative && present(item, "nextTextOffset"))
+                    body = completeActivityText(threadId, item, id);
+                String title = string(item, "title");
+                if (body.isBlank()) body = title;
+                else if (!narrative && !title.isBlank() && !body.startsWith(title)) body = title + "\n" + body;
+                if (body.isBlank()) continue;
+                if (!narrative && flag(item, "textTruncated", false)) body += "…";
+                activity.put(position, new ChatMessage(id, narrative ? MessageRole.ASSISTANT : MessageRole.TOOL,
+                        body, timestamp(item, "updatedAt"), false, runId, type, List.of(), null, position));
+            }
+            if (reachedStart || !present(page, "earlierPosition")) break;
+            before = first;
+        }
+        return List.copyOf(activity.values());
+    }
+
+    private String completeActivityText(String threadId, JsonObject item, String id) throws IOException {
+        var body = new StringBuilder(string(item, "text"));
+        var args = threadArgs(threadId);
+        args.addProperty("view", "activity");
+        args.addProperty("itemId", id);
+        args.addProperty("limit", 1);
+        args.addProperty("runLimit", 1);
+        args.addProperty("maxCharsPerItem", 20000);
+        int previous = 0;
+        while (present(item, "nextTextOffset")) {
+            int offset = integer(item, "nextTextOffset");
+            if (offset <= previous || offset != body.length()) throw malformed("nextTextOffset");
+            previous = offset;
+            args.addProperty("textOffset", offset);
+            var rows = array(call("t3_thread_read", args), "items");
+            if (rows.size() != 1) throw malformed("items");
+            item = object(rows.get(0), "items[]");
+            if (!id.equals(string(item, "itemId"))) throw malformed("items[].itemId");
+            body.append(string(item, "text"));
+        }
+        return body.toString();
     }
 
     static Map<String,RunTiming> runTimings(JsonObject result) {
@@ -399,10 +487,10 @@ public final class T3Api implements ChatImage.PageReader {
         return T3Attachments.send(this, threadId, caption, images, capture);
     }
 
-    public void setSnooze(String threadId, Instant until) throws IOException {
+    public void organize(String threadId, ThreadAction action, Instant until) throws IOException {
         JsonObject args = threadArgs(threadId);
-        args.addProperty("action", until == null ? "unsnooze" : "snooze");
-        if (until != null) args.addProperty("snoozedUntil", until.toString());
+        args.addProperty("action", action.name().toLowerCase(java.util.Locale.ROOT));
+        if (action == ThreadAction.SNOOZE) args.addProperty("snoozedUntil", until.toString());
         call("t3_thread_organize", args);
     }
 

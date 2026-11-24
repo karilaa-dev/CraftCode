@@ -9,6 +9,7 @@ import dev.t3mc.ui.Notifications;
 import dev.t3mc.ui.model.*;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -317,8 +318,8 @@ public final class ClientController implements AutoCloseable {
             old.sending.completeExceptionally(new IOException(tr("net.closed_images", "Connection closed. Check the thread before sending the images again.")));
         else if (old.sending != null) old.sending.complete(false);
         if (old.configuring != null) old.configuring.complete(false);
-        for (var query : old.catalogRequests) query.completeExceptionally(new IOException(tr("net.disconnected", "Disconnected from T3 Code.")));
-        old.catalogRequests.clear();
+        for (var query : old.readRequests) query.completeExceptionally(new IOException(tr("net.disconnected", "Disconnected from T3 Code.")));
+        old.readRequests.clear();
         Thread.startVirtualThread(old::closeWire);
     }
 
@@ -349,14 +350,16 @@ public final class ClientController implements AutoCloseable {
             return CompletableFuture.failedFuture(new IOException(tr("net.models_connect", "Connect to T3 Code to browse models.")));
         if (!target.capabilities.contains("orchestrator_capabilities"))
             return CompletableFuture.failedFuture(new IOException(tr("net.no_catalog", "This T3 server does not expose a model catalog.")));
-        var result = new CompletableFuture<List<ModelProvider>>();
-        target.catalogRequests.add(result);
-        target.worker.execute(() -> {
-            try { result.complete(target.api.models(Objects.requireNonNullElse(search, "").strip())); }
-            catch (Exception e) { result.completeExceptionally(e); }
-            finally { synchronized (ClientController.this) { target.catalogRequests.remove(result); } }
-        });
-        return result;
+        return target.read(() -> target.api.models(Objects.requireNonNullElse(search, "").strip()));
+    }
+
+    public synchronized CompletableFuture<List<ChatMessage>> loadWork(long generation, String threadId, String runId,
+                                                                      int after, int before) {
+        Session target = session;
+        if (target == null || generation != connectionGeneration || !Objects.equals(threadId, snapshot.selectedThreadId())
+                || snapshot.connection().state() != ConnectionState.CONNECTED)
+            return CompletableFuture.failedFuture(new IOException(tr("net.disconnected", "Disconnected from T3 Code.")));
+        return target.read(() -> target.api.readWork(threadId, runId, after, before));
     }
 
     /** Apply to the explicit selected thread. The next send may proceed once T3 accepts the change. */
@@ -388,9 +391,13 @@ public final class ClientController implements AutoCloseable {
     }
 
     public synchronized boolean readOnlyEnvironment() {
-        if (session == null || session.environmentId.isEmpty()) return false;
-        Session primary = root(session.profileId);
-        return primary == null || primary.links.stream().noneMatch(link -> link.id().equals(session.environmentId)
+        return session != null && readOnly(session);
+    }
+
+    private boolean readOnly(Session target) {
+        if (target.environmentId.isEmpty()) return false;
+        Session primary = root(target.profileId);
+        return primary == null || primary.links.stream().noneMatch(link -> link.id().equals(target.environmentId)
                 && link.reachable() && !link.readOnly());
     }
 
@@ -442,30 +449,35 @@ public final class ClientController implements AutoCloseable {
         });
         return result;
     }
-    public synchronized boolean supportsSnooze() {
-        return session != null && session.capabilities.contains("t3_thread_organize");
-    }
 
-    private boolean canSnooze(String threadId) {
-        return canEditThread(session, threadId) && !snapshot.drafting()
-                && snapshot.selectedThread().organization() != ThreadOrganization.SETTLED
-                && supportsSnooze();
-    }
-
-    public synchronized void setSnooze(long generation, String threadId, java.time.Instant until) {
-        if (generation != connectionGeneration || !canSnooze(threadId)) return;
-        submit(s -> {
-            synchronized (ClientController.this) {
-                if (generation != connectionGeneration || !canSnooze(threadId)) return;
-            }
-            s.api.setSnooze(threadId, until);
-            s.lastDetail = null;
-            s.refresh();
+    /** Sidebar actions belong to the row's session even when another conversation is open. */
+    public synchronized void organizeThread(WorkspaceEnvironment source, String threadId, ThreadAction action, Instant until) {
+        Session target = sessions.get(new Target(source.profileId(), source.environmentId()));
+        if (target == null || !target.canOrganizeThreads() || (action == ThreadAction.SNOOZE) != (until != null)) return;
+        target.worker.execute(() -> {
+            try {
+                synchronized (ClientController.this) {
+                    if (!target.registered() || !target.canOrganizeThreads()
+                            || config.profile(target.profileId).display(target.environmentId).hidden()) return;
+                    boolean available = target.visibleSidebar.stream().flatMap(project -> project.threads().stream())
+                            .anyMatch(t -> t.id().equals(threadId) && ThreadAction.available(t.organization()).contains(action));
+                    if (!available) return;
+                }
+                target.organize(threadId, action, until);
+            } catch (Exception e) { target.problem(e, false); }
         });
     }
 
-    public void interruptThread(String threadId) {
-        submit(s -> { s.api.interrupt(threadId, UUID.randomUUID().toString()); s.refresh(); });
+    public synchronized void interruptThread(long generation, String threadId) {
+        if (generation != connectionGeneration) return;
+        submit(s -> {
+            synchronized (ClientController.this) {
+                if (generation != connectionGeneration || !canEditThread(s, threadId)
+                        || snapshot.selectedThread().status() != ThreadStatus.RUNNING) return;
+            }
+            s.api.interrupt(threadId, UUID.randomUUID().toString());
+            s.refresh();
+        });
     }
     public void answerQuestion(String threadId, String requestId, String answer) {
         answerQuestion(threadId, requestId, List.of(answer));
@@ -495,11 +507,10 @@ public final class ClientController implements AutoCloseable {
             if (profile == null) continue;
             var display = profile.display(s.environmentId);
             if (display.hidden()) continue;
-            var primary = root(s.profileId);
-            boolean writable = s.status.state() == ConnectionState.CONNECTED && (s.environmentId.isEmpty()
-                    || primary != null && primary.links.stream().anyMatch(l -> l.id().equals(s.environmentId) && l.reachable() && !l.readOnly()));
+            boolean writable = s.writable();
             var name = s.environmentId.isEmpty() ? profile.name() : profile.name() + " / " + s.label;
-            environments.add(new WorkspaceEnvironment(s.profileId, s.environmentId, name, display.icon(), writable, s.visibleSidebar));
+            environments.add(new WorkspaceEnvironment(s.profileId, s.environmentId, name, display.icon(),
+                    writable, writable && s.capabilities.contains("t3_thread_organize"), s.visibleSidebar));
         }
         boolean drafting = detail != null && session.visibleDraft;
         var next = new WorkspaceSnapshot(snapshot.version(), connection, projects, id, detail, config.view(connections()), environments, drafting);
@@ -527,7 +538,7 @@ public final class ClientController implements AutoCloseable {
         CompletableFuture<Boolean> sending;
         boolean sendingImages;
         CompletableFuture<Boolean> configuring;
-        final Set<CompletableFuture<List<ModelProvider>>> catalogRequests = new HashSet<>();
+        final Set<CompletableFuture<?>> readRequests = new HashSet<>();
         int pendingNavigation;
         String retryThread, retryText, retryKey;
         ThreadMonitor monitor;
@@ -541,6 +552,17 @@ public final class ClientController implements AutoCloseable {
         long projectRefresh;
         String pollError = "";
 
+        <T> CompletableFuture<T> read(Callable<T> query) {
+            var result = new CompletableFuture<T>();
+            readRequests.add(result);
+            worker.execute(() -> {
+                try { result.complete(query.call()); }
+                catch (Exception e) { result.completeExceptionally(e); }
+                finally { synchronized (ClientController.this) { readRequests.remove(result); } }
+            });
+            return result;
+        }
+
         Session(ClientConfig settings, String environmentId, String label) {
             this.settings = settings;
             this.profileId = settings.httpUrl();
@@ -550,6 +572,16 @@ public final class ClientController implements AutoCloseable {
         }
 
         boolean registered() { return sessions.get(key) == this; }
+
+        boolean writable() { return status.state() == ConnectionState.CONNECTED && !readOnly(this); }
+
+        boolean canOrganizeThreads() { return writable() && capabilities.contains("t3_thread_organize"); }
+
+        void organize(String id, ThreadAction action, Instant until) throws IOException {
+            api.organize(id, action, until);
+            if (id.equals(selected)) lastDetail = null;
+            refresh();
+        }
 
         void queueDiscovery() {
             if (api == null || discoveryQueued || !capabilities.contains("t3_environment_links") || worker.isShutdown()) return;
@@ -803,7 +835,7 @@ public final class ClientController implements AutoCloseable {
                 }
                 String text = m.displayText(!images.isEmpty());
                 messages.add(new ChatMessage(m.id(), role, text, m.createdAtMillis(), m.streaming(), m.runId(), m.phase(), images,
-                        conversation.runTimings().get(m.runId())));
+                        conversation.runTimings().get(m.runId()), m.position()));
             }
             if (conversation.pendingRequestCount() > 0 && questions.isEmpty())
                 messages.add(new ChatMessage("pending", MessageRole.SYSTEM, tr("net.pending_request", "Open this thread in T3 Code to review its pending request."), 0, false));

@@ -4,8 +4,13 @@ import java.util.Objects;
 import java.util.List;
 
 public record ChatMessage(String id, MessageRole role, String text, long createdAtMillis, boolean streaming,
-                          String runId, String phase, List<ChatImage> images, RunTiming runTiming) {
+                          String runId, String phase, List<ChatImage> images, RunTiming runTiming, int position) {
     public record RunTiming(long startedAtMillis, long completedAtMillis) {}
+
+    public ChatMessage(String id, MessageRole role, String text, long createdAtMillis, boolean streaming,
+                       String runId, String phase, List<ChatImage> images, RunTiming runTiming) {
+        this(id, role, text, createdAtMillis, streaming, runId, phase, images, runTiming, -1);
+    }
 
     public ChatMessage(String id, MessageRole role, String text, long createdAtMillis, boolean streaming,
                        String runId, String phase, List<ChatImage> images) {

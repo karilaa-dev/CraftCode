@@ -11,8 +11,8 @@ import dev.t3mc.ui.model.ModelSelection;
 import dev.t3mc.ui.model.PendingQuestion;
 import dev.t3mc.ui.model.ProjectView;
 import dev.t3mc.ui.model.ThreadDetail;
+import dev.t3mc.ui.model.ThreadAction;
 import dev.t3mc.ui.model.ThreadStatus;
-import dev.t3mc.ui.model.ThreadOrganization;
 import dev.t3mc.ui.model.WorkspaceSnapshot;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -130,8 +130,6 @@ public class WorkspaceScreen extends SpruceScreen {
     private ModelChip modelButton;
     private FlatButton attachButton;
     private @Nullable AttachmentStrip attachmentStrip;
-    private FlatButton snoozeButton;
-    private FlatButton stopButton;
     private FlatButton connectButton;
 
     public WorkspaceScreen(ClientController controller) {
@@ -204,6 +202,16 @@ public class WorkspaceScreen extends SpruceScreen {
             }
 
             @Override
+            public void organizeThread(WorkspaceProject project, String threadId, ThreadAction action) {
+                if (action == ThreadAction.SNOOZE) {
+                    minecraft.gui.setScreen(new SnoozeScreen(WorkspaceScreen.this,
+                            until -> controller.organizeThread(project.source(), threadId, action, until)));
+                } else {
+                    controller.organizeThread(project.source(), threadId, action, null);
+                }
+            }
+
+            @Override
             public void toggleSnoozed() {
                 if (query.isBlank()) snoozedExpanded = !snoozedExpanded;
                 else snoozedSearchCollapsed = !snoozedSearchCollapsed;
@@ -228,18 +236,6 @@ public class WorkspaceScreen extends SpruceScreen {
         this.addRenderableWidget(new FlatButton(Position.of(6, this.height - 24), sw - 12, 18,
                 L10n.tr("chat.workspace.settings", "Settings"), b -> this.minecraft.gui.setScreen(new ConnectionsScreen(this, controller))));
 
-        // Header buttons (visibility toggled in refresh)
-        String stopLabel = L10n.tr("chat.workspace.stop", "Stop");
-        int stopW = Math.max(50, this.font.width(stopLabel) + 10);
-        this.stopButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - stopW, 8), stopW, 16, stopLabel,
-                FlatButton.Kind.DANGER, b -> {
-            var current = this.snapshot.selectedThread();
-            if (current != null) this.controller.onConnection(snapshot.settings().connections().generation(),
-                    () -> controller.interruptThread(current.id()));
-        }));
-        int snoozeW = Math.max(font.width(snoozeLabel(false)), font.width(snoozeLabel(true))) + 10;
-        this.snoozeButton = addRenderableWidget(new FlatButton(Position.of(width - pad - snoozeW, 8), snoozeW, 16,
-                snoozeLabel(false), b -> changeSnooze()));
         int connectW = Math.max(64, Math.max(this.font.width(reconnectLabel()), this.font.width(connectLabel())) + 10);
         this.connectButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - connectW, 8), connectW, 16,
                 reconnectLabel(),
@@ -267,9 +263,9 @@ public class WorkspaceScreen extends SpruceScreen {
             this.attachmentStrip = this.addRenderableWidget(new AttachmentStrip(Position.of(mainX + pad, stripY), mainW - pad * 2,
                     this.previews, this::removeImage));
         }
-        int sendW = Math.max(mainW < 240 ? 32 : 60, Math.min(mainW / 4, Math.max(this.font.width(sendLabel()), this.font.width(sendingLabel())) + 10));
+        int sendW = Math.max(mainW < 240 ? 32 : 60, Math.min(mainW / 4, Math.max(this.font.width(stopLabel()), Math.max(this.font.width(sendLabel()), this.font.width(sendingLabel()))) + 10));
         this.sendButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - inset - sendW, sendRowY), sendW, SEND_ROW,
-                sendLabel(), FlatButton.Kind.PRIMARY, b -> this.send()));
+                sendLabel(), FlatButton.Kind.PRIMARY, b -> this.pressComposerButton()));
         boolean roomy = mainW - pad * 2 >= 240;
         String attachLabel = roomy ? L10n.tr("chat.composer.attach", "+ Image") : L10n.tr("chat.composer.attach_short", "Image");
         int attachW = Math.max(roomy ? 48 : 36, this.font.width(attachLabel) + 10);
@@ -316,7 +312,9 @@ public class WorkspaceScreen extends SpruceScreen {
         // Transcript
         if (this.chatPreviews == null) this.chatPreviews = new ChatImagePreviews();
         this.transcript = this.addRenderableWidget(new TranscriptView(Position.of(mainX, HEADER + 1), mainW,
-                Math.max(20, transcriptBottom - HEADER - 1), this.chatPreviews, this.transcriptState));
+                Math.max(20, transcriptBottom - HEADER - 1), this.chatPreviews, this.transcriptState,
+                (id, turn) -> this.controller.loadWork(this.snapshot.settings().connections().generation(), id, turn.runId(),
+                        turn.user() == null ? -1 : turn.user().position(), turn.beforePosition())));
 
         boolean sameThread = Objects.equals(threadId, this.displayedThreadId);
         this.displayedThreadId = threadId;
@@ -385,7 +383,7 @@ public class WorkspaceScreen extends SpruceScreen {
             if (this.composer != null && (this.models.version() != this.renderedModelsVersion
                     || this.models.generation() != this.controller.connectionGeneration())) {
                 this.refresh(next, false);
-            }
+            } else if (this.composer != null) this.refreshComposerButton(next);
             return;
         }
         if (!this.layoutKey(next).equals(this.layoutKey)) {
@@ -437,22 +435,11 @@ public class WorkspaceScreen extends SpruceScreen {
         if (this.answerField != null) this.answerField.setActive(writable);
         if (this.replyButton != null) this.replyButton.setActive(writable);
         boolean sending = this.pendingSend != null && detail != null && this.pendingSend.threadId().equals(detail.id());
-        boolean configuring = detail != null && this.models.applying(detail.id());
         this.composer.setActive(canType && !sending);
-        boolean attaching = detail != null && this.attaching(detail.id());
-        this.sendButton.setActive(canType && !sending && !configuring && !attaching);
-        this.sendButton.setLabel(sending ? sendingLabel() : sendLabel());
+        this.refreshComposerButton(snap);
         this.imagesSupported = connected && this.controller.supportsImageAttachments();
         this.refreshAttachments(canType && !sending, detail != null && !sending);
         this.refreshModelChip(snap, canType && !sending);
-        boolean running = detail != null && detail.status() == ThreadStatus.RUNNING;
-        this.stopButton.setVisible(writable && running);
-        boolean snoozed = detail != null && detail.organization() == ThreadOrganization.SNOOZED;
-        snoozeButton.setVisible(writable && detail != null && !snap.drafting()
-                && detail.organization() != ThreadOrganization.SETTLED && controller.supportsSnooze());
-        snoozeButton.setLabel(snoozeLabel(snoozed));
-        snoozeButton.getPosition().setRelativeX(width - 12 - snoozeButton.getWidth()
-                - (stopButton.isVisible() ? stopButton.getWidth() + 4 : 0));
         var state = snap.connection().state();
         this.connectButton.setVisible(state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED);
         this.connectButton.setLabel(state == ConnectionState.ERROR ? reconnectLabel() : connectLabel());
@@ -471,21 +458,7 @@ public class WorkspaceScreen extends SpruceScreen {
         if (connected) this.models.retainThreads(threads);
     }
 
-    private static String snoozeLabel(boolean snoozed) {
-        return snoozed ? L10n.tr("snooze.wake", "Unsnooze") : L10n.tr("snooze.action", "Snooze…");
-    }
-
-    private void changeSnooze() {
-        var thread = snapshot.selectedThread();
-        if (thread == null) return;
-        long generation = snapshot.settings().connections().generation();
-        if (thread.organization() == ThreadOrganization.SNOOZED) {
-            controller.setSnooze(generation, thread.id(), null);
-        } else {
-            minecraft.gui.setScreen(new SnoozeScreen(this, until -> controller.setSnooze(generation, thread.id(), until)));
-        }
-    }
-
+    private static String stopLabel() { return L10n.tr("chat.workspace.stop", "Stop"); }
     private static String sendLabel() { return L10n.tr("chat.composer.send", "Send"); }
 
     private static String sendingLabel() { return L10n.tr("chat.composer.sending", "Sending…"); }
@@ -606,7 +579,8 @@ public class WorkspaceScreen extends SpruceScreen {
         this.picker.setVisible(pickingProject || filtering);
         filterButton.setLabel(projectFilter == null ? L10n.tr("sidebar.filter_short", "Filter") : filtered.getFirst().name());
         filterButton.setKind(filtering || projectFilter != null ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL);
-        this.newThreadButton.setLabel(pickingProject ? L10n.tr("chat.picker.cancel", "Cancel") : L10n.tr("chat.thread.new", "+  New thread"));
+        if (pickingProject) this.newThreadButton.setLabel(L10n.tr("chat.picker.cancel", "Cancel"));
+        else this.newThreadButton.setLabel(L10n.tr("chat.thread.new", "+  New thread"), L10n.tr("chat.thread.new_short", "+  New"));
     }
 
     private void togglePicker() {
@@ -654,6 +628,30 @@ public class WorkspaceScreen extends SpruceScreen {
             return;
         }
         super.onClose();
+    }
+
+    private boolean hasComposerContent(ThreadDetail detail) {
+        return !this.composer.getText().isBlank() || !this.images(detail.id()).isEmpty();
+    }
+
+    private void refreshComposerButton(WorkspaceSnapshot snap) {
+        var detail = snap.selectedThread();
+        boolean content = detail != null && hasComposerContent(detail);
+        boolean sending = this.pendingSend != null && detail != null && this.pendingSend.threadId().equals(detail.id());
+        boolean stop = !content && !sending && detail != null && detail.status() == ThreadStatus.RUNNING;
+        String label = sending ? sendingLabel() : stop ? stopLabel() : sendLabel();
+        if (!this.sendButton.getMessage().getString().equals(label)) this.sendButton.setLabel(label);
+        this.sendButton.setKind(stop ? FlatButton.Kind.DANGER : FlatButton.Kind.PRIMARY);
+        this.sendButton.setActive(this.composer.isActive() && (content || stop)
+                && !this.attaching(detail.id()) && !this.models.applying(detail.id()));
+    }
+
+    private void pressComposerButton() {
+        var detail = this.snapshot.selectedThread();
+        if (detail == null) return;
+        if (detail.status() == ThreadStatus.RUNNING && !hasComposerContent(detail)) {
+            controller.interruptThread(snapshot.settings().connections().generation(), detail.id());
+        } else this.send();
     }
 
     private void send() {
@@ -1021,8 +1019,7 @@ public class WorkspaceScreen extends SpruceScreen {
 
         // Main header: thread title, status and project
         int mainX = sw + 1 + 12;
-        int rightLimit = this.width - 12 - (snoozeButton.isVisible() ? snoozeButton.getWidth() + 6 : 0) - (this.stopButton.isVisible() ? this.stopButton.getWidth() + 6 : 0)
-                - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 6 : 0);
+        int rightLimit = this.width - 12 - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 6 : 0);
         var detail = snap.selectedThread();
         if (detail != null) {
             var owner = servers.activeProfile();

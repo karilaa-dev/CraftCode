@@ -67,7 +67,7 @@ abstract class ScrollableWidget extends AbstractSpruceWidget {
             this.dragTo(event.y());
             return true;
         }
-        return this.onContentClick(event.x(), event.y() - this.getY() + this.scroll, event.button());
+        return this.onContentClick(event.x(), event.y() - this.getY() + Math.round(this.scroll), event.button());
     }
 
     @Override

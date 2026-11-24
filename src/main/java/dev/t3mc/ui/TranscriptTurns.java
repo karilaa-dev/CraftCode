@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.TreeMap;
 
 /**
  * Groups a flat message list into turns like the T3 Code desktop app: the user's message, the intermediate work
@@ -23,9 +24,25 @@ final class TranscriptTurns {
      * trailing notes). {@code active} marks the turn still being produced.
      */
     record Turn(String key, @Nullable ChatMessage user, List<ChatMessage> work, List<ChatMessage> shown, boolean active,
-                long startedAt, long endedAt) {
+                long startedAt, long endedAt, String runId, int beforePosition) {
+        boolean canLoadWork() {
+            return !active && !runId.isEmpty() && beforePosition >= 0;
+        }
+
+        /** Keep the final response outside the disclosure and preserve previews already attached to messages. */
+        Turn withActivity(List<ChatMessage> activity) {
+            var rows = new TreeMap<Integer, ChatMessage>();
+            for (var row : activity) rows.put(row.position(), row);
+            for (var row : work) {
+                if (row.position() >= 0 && (rows.get(row.position()) == null || !row.images().isEmpty()))
+                    rows.put(row.position(), row);
+            }
+            for (var row : shown) rows.remove(row.position());
+            return new Turn(key, user, List.copyOf(rows.values()), shown, active, startedAt, endedAt, runId, beforePosition);
+        }
+
         boolean hasWork() {
-            return !this.work.isEmpty();
+            return !this.work.isEmpty() || canLoadWork();
         }
 
         /** Text copied for the folded work: every work message, separated by blank lines. */
@@ -58,7 +75,7 @@ final class TranscriptTurns {
             String run = runId(message);
             boolean newRun = current != null && !run.isEmpty() && !currentRun.isEmpty() && !run.equals(currentRun)
                     && current.stream().anyMatch(m -> m.role() != MessageRole.USER);
-            if (current == null || message.role() == MessageRole.USER || newRun) {
+            if (current == null || message.role() == MessageRole.USER || newRun || current.getFirst().id().equals("t3mc-history")) {
                 current = new ArrayList<>();
                 raw.add(current);
                 currentRun = "";
@@ -73,9 +90,11 @@ final class TranscriptTurns {
             ChatMessage user = list.getFirst().role() == MessageRole.USER ? list.getFirst() : null;
             var responses = user == null ? list : list.subList(1, list.size());
             var timing = user == null ? null : user.runTiming();
+            String run = user == null ? "" : user.runId();
             for (var response : responses) {
                 if (!runId(response).isEmpty()) {
                     timing = response.runTiming();
+                    run = response.runId();
                     break;
                 }
             }
@@ -103,7 +122,11 @@ final class TranscriptTurns {
             if (timing != null && timing.startedAtMillis() > 0) start = timing.startedAtMillis();
             long end = completed ? timing.completedAtMillis() : list.getLast().createdAtMillis();
             String key = (user != null ? user : list.getFirst()).id();
-            turns.add(new Turn(key, user, List.copyOf(work), List.copyOf(shown), active, start, end));
+            int before = -1;
+            if (list.stream().anyMatch(m -> m.position() >= 0)) {
+                before = last ? Integer.MAX_VALUE : raw.get(t + 1).getFirst().position();
+            }
+            turns.add(new Turn(key, user, List.copyOf(work), List.copyOf(shown), active, start, end, run, before));
         }
         return turns;
     }
@@ -135,7 +158,7 @@ final class TranscriptTurns {
 
     private static boolean isWorkPhase(String phase) {
         String p = phase.toLowerCase(Locale.ROOT);
-        return p.equals("commentary") || p.equals("progress") || p.equals("reasoning") || p.equals("thinking");
+        return p.equals("commentary") || p.equals("progress") || p.equals("reasoning") || p.equals("thinking") || p.equals("proposed_plan");
     }
 
     private static String runId(ChatMessage message) {
@@ -167,6 +190,7 @@ final class TranscriptTurns {
                 : L10n.tr("chat.work.active_for", "Working for %s", time);
         if (!time.isEmpty()) return L10n.tr("chat.work.done_for", "Worked for %s", time);
         int steps = turn.work().size();
+        if (steps == 0) return L10n.tr("chat.work.done", "Worked");
         return steps == 1 ? L10n.tr("chat.work.done_step", "Worked · %s step", steps)
                 : L10n.tr("chat.work.done_steps", "Worked · %s steps", steps);
     }

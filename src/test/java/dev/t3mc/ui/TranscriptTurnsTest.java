@@ -158,6 +158,24 @@ class TranscriptTurnsTest {
     }
 
     @Test
+    void finishedRunCanRevealWorkWhenOnlyItsFinalReplyMadeTheMessagesPage() {
+        var history = msg("t3mc-history", MessageRole.SYSTEM, 0);
+        var finalReply = new ChatMessage("reply", MessageRole.ASSISTANT, "Done", 10, false, "r", "", List.of(), null, 9);
+        var nextUser = new ChatMessage("next", MessageRole.USER, "Next task", 11, false, "next-run", "", List.of(), null, 10);
+        var turns = TranscriptTurns.group(List.of(history, finalReply, nextUser), false);
+        var turn = turns.get(1);
+        assertNull(turn.user());
+        assertTrue(turn.canLoadWork());
+        assertEquals(10, turn.beforePosition());
+        assertTrue(turn.work().isEmpty());
+        var first = new ChatMessage("first", MessageRole.ASSISTANT, "Checking", 1, false, "r", "reasoning", List.of(), null, 1);
+        var last = new ChatMessage("last", MessageRole.TOOL, "Build", 8, false, "r", "", List.of(), null, 8);
+        var expanded = turn.withActivity(List.of(first, last, finalReply));
+        assertEquals(List.of("first", "last"), ids(expanded.work()));
+        assertEquals(List.of("reply"), ids(expanded.shown()));
+    }
+
+    @Test
     void durations() {
         assertEquals("0s", TranscriptTurns.duration(999));
         assertEquals("59s", TranscriptTurns.duration(59_000));

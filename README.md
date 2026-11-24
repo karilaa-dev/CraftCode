@@ -8,11 +8,11 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 
 ## Screenshots
 
-![A village workshop conversation with Snoozed and Settled collapsed in the sidebar.](docs/images/workspace.webp)
+![A running thread with Stop in the composer and Snooze and Settle on the hovered sidebar row.](docs/images/workspace.webp)
 
-| Snoozed threads | Snooze a thread |
-| --- | --- |
-| [![The expanded Snoozed section shows a thread due to wake in seven days.](docs/images/snoozed.webp)](docs/images/snoozed.webp) | [![Snooze duration choices of one hour, one day, or one week.](docs/images/snooze-menu.webp)](docs/images/snooze-menu.webp) |
+| Finished turn | Snoozed threads | Snooze a thread |
+| --- | --- | --- |
+| [![Expanded Worked history showing progress updates, a command, and a file change above the final reply.](docs/images/worked.webp)](docs/images/worked.webp) | [![The expanded Snoozed section shows a thread due to wake in seven days.](docs/images/snoozed.webp)](docs/images/snoozed.webp) | [![Snooze duration choices of one hour, one day, or one week.](docs/images/snooze-menu.webp)](docs/images/snooze-menu.webp) |
 
 | New thread draft | Server visibility and icons |
 | --- | --- |

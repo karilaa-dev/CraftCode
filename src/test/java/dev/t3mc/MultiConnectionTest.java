@@ -13,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -112,6 +113,40 @@ class MultiConnectionTest {
                 await(() -> c.connections().online() == 3);
                 assertEquals(4, c.connections().total());
             }
+        }
+    }
+
+    @Test void organizingABackgroundRowPreservesSelectionAndRechecksPeerAccess() throws Exception {
+        try (var a = new Server("A"); var c = new ClientController(dir.resolve("rows.json"))) {
+            assertTrue(c.saveProfile("Studio", settings(a)));
+            await(() -> c.connections().online() == 2);
+            c.selectThread("same");
+            await(() -> c.snapshot().selectedThread() != null);
+            var peer = c.snapshot().environments().stream().filter(e -> e.environmentId().equals("peer")).findFirst().orElseThrow();
+            var until = Instant.parse("2099-02-01T00:00:00Z");
+            c.organizeThread(peer, "same", ThreadAction.SNOOZE, until);
+            c.organizeThread(peer, "same", ThreadAction.SETTLE, null);
+            await(() -> a.organizations.size() == 2);
+            var snooze = a.organizations.getFirst();
+            assertEquals("snooze", snooze.get("action").getAsString());
+            assertEquals(until.toString(), snooze.get("snoozedUntil").getAsString());
+            var settle = a.organizations.getLast();
+            assertEquals("settle", settle.get("action").getAsString());
+            assertFalse(settle.has("snoozedUntil"));
+            for (var request : a.organizations) {
+                assertEquals("peer", request.get("environmentId").getAsString());
+                assertEquals("same", request.get("threadId").getAsString());
+            }
+            assertEquals("", c.connections().environmentId());
+            assertEquals("A", c.snapshot().selectedThread().title());
+
+            a.access = "read-only";
+            c.refreshLinkedEnvironments();
+            await(() -> c.snapshot().environments().stream().anyMatch(e -> e.environmentId().equals("peer") && !e.canOrganizeThreads()));
+            c.organizeThread(peer, "same", ThreadAction.SETTLE, null);
+            c.openThread(peer, "same");
+            await(() -> c.snapshot().selectedThread() != null && "A-peer".equals(c.snapshot().selectedThread().title()));
+            assertEquals(2, a.organizations.size());
         }
     }
 
@@ -310,6 +345,7 @@ class MultiConnectionTest {
         volatile String access = "approval-required", linkStatus = "reachable", peerStatus = "idle";
         volatile boolean advertiseRouting = true, failDiscovery;
         final List<String> sentMessages = new CopyOnWriteArrayList<>();
+        final List<JsonObject> organizations = new CopyOnWriteArrayList<>();
 
         Server(String name) throws IOException {
             this.name = name;
@@ -332,7 +368,8 @@ class MultiConnectionTest {
                     case "tools/list" -> {
                         var result = new JsonObject();
                         var tools = new JsonArray();
-                        for (String tool : List.of("t3_project_list", "t3_thread_list", "t3_thread_read", "t3_thread_send", "t3_environment_links")) {
+                        for (String tool : List.of("t3_project_list", "t3_thread_list", "t3_thread_read", "t3_thread_send",
+                                "t3_environment_links", "t3_thread_organize")) {
                             var schema = new JsonObject();
                             schema.addProperty("name", tool);
                             if (advertiseRouting && !tool.equals("t3_environment_links"))
@@ -373,6 +410,7 @@ class MultiConnectionTest {
                     yield json("{\"threads\":[" + thread + "]}");
                 }
                 case "t3_thread_read" -> json("{\"thread\":" + thread + ",\"items\":[]}");
+                case "t3_thread_organize" -> { organizations.add(args); yield new JsonObject(); }
                 case "t3_thread_launch" -> { createDestinations.add(target); yield json("{\"threadId\":\"same\"}"); }
                 case "t3_thread_send" -> {
                     sendDestinations.add(target);

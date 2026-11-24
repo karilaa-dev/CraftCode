@@ -6,10 +6,14 @@ import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import dev.lambdaurora.spruceui.Position;
 import dev.lambdaurora.spruceui.render.SpruceGuiGraphics;
 import dev.t3mc.ui.model.ConnectionsView;
+import dev.t3mc.ui.model.ThreadAction;
 import dev.t3mc.ui.model.ThreadOrganization;
 import dev.t3mc.ui.model.ThreadStatus;
 import dev.t3mc.ui.model.ThreadSummary;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -26,6 +30,8 @@ final class SidebarList extends ScrollableWidget {
     interface Actions {
         void selectThread(WorkspaceProject project, String threadId);
 
+        void organizeThread(WorkspaceProject project, String threadId, ThreadAction action);
+
         void toggleSnoozed();
 
         void toggleSettled();
@@ -34,9 +40,16 @@ final class SidebarList extends ScrollableWidget {
     }
 
     static final int SETTLED_PAGE = 25;
-    private static final int ROW = 27;
     private static final int COMPACT = 15;
     private static final int HEADER = 18;
+    private static final int BUTTON_TOP = 1;
+    private static final int BUTTON_SIZE = 14;
+    private static final int BUTTON_STRIDE = BUTTON_SIZE + 1;
+    private static final int TITLE_TOP = BUTTON_TOP + BUTTON_SIZE + 5;
+    private static final int ROW = TITLE_TOP + 12;
+    private static final int ICON_SIZE = 8;
+    private static final Identifier SNOOZE_ICON = Identifier.fromNamespaceAndPath("t3mc", "thread/snooze");
+    private static final Identifier SETTLE_ICON = Identifier.fromNamespaceAndPath("t3mc", "thread/settle");
 
     private enum Kind { SECTION, THREAD, SNOOZED_HEADER, SETTLED_HEADER, COMPACT_THREAD, MORE }
 
@@ -45,6 +58,11 @@ final class SidebarList extends ScrollableWidget {
     private record Row(Kind kind, @Nullable Entry entry, String label, int y, int height) {
         Row(Kind kind, @Nullable Entry entry, int y, int height) {
             this(kind, entry, "", y, height);
+        }
+
+        List<ThreadAction> buttons() {
+            return entry != null && entry.project().source().canOrganizeThreads()
+                    ? ThreadAction.available(entry.thread().organization()) : List.of();
         }
     }
 
@@ -171,7 +189,13 @@ final class SidebarList extends ScrollableWidget {
         if (row == null || row.kind() == Kind.SECTION) return false;
         this.playDownSound();
         switch (row.kind()) {
-            case THREAD, COMPACT_THREAD -> this.actions.selectThread(row.entry().project(), row.entry().thread().id());
+            case THREAD, COMPACT_THREAD -> {
+                var buttons = row.buttons();
+                int hit = buttonAt(buttons, this.getEndX() - 6, mouseX, contentY - row.y());
+                var entry = row.entry();
+                if (hit >= 0) this.actions.organizeThread(entry.project(), entry.thread().id(), buttons.get(hit));
+                else this.actions.selectThread(entry.project(), entry.thread().id());
+            }
             case SNOOZED_HEADER -> this.actions.toggleSnoozed();
             case SETTLED_HEADER -> this.actions.toggleSettled();
             case SECTION -> { }
@@ -242,10 +266,12 @@ final class SidebarList extends ScrollableWidget {
             }
             boolean hovered = inside && mouseY >= y && mouseY < y + h && mouseX < this.getEndX() - 5;
             if (hovered) graphics.requestCursor(CursorTypes.POINTING_HAND);
+            var buttons = hovered ? row.buttons() : List.<ThreadAction>of();
+            int buttonsWidth = buttons.size() * BUTTON_STRIDE;
 
             switch (row.kind()) {
-                case THREAD -> this.drawThread(graphics, font, row.entry(), left, right, y, hovered);
-                case COMPACT_THREAD -> this.drawCompact(graphics, font, row.entry(), left, right, y, hovered);
+                case THREAD -> this.drawThread(graphics, font, row.entry(), left, right, y, hovered, buttonsWidth);
+                case COMPACT_THREAD -> this.drawCompact(graphics, font, row.entry(), left, right, y, hovered, buttonsWidth);
                 case SECTION -> { }
                 case SNOOZED_HEADER, SETTLED_HEADER -> {
                     boolean snoozed = row.kind() == Kind.SNOOZED_HEADER;
@@ -263,6 +289,49 @@ final class SidebarList extends ScrollableWidget {
                     String more = L10n.tr("chat.sidebar.show_more", "▾ Show %s more", Math.min(SETTLED_PAGE, this.hiddenSettled));
                     graphics.text(font, more, left + 6, textY, hovered ? Theme.TEXT : Theme.MUTED, false);
                 }
+            }
+            if (!buttons.isEmpty()) drawButtons(graphics, font, buttons, right, y, mouseX, mouseY);
+        }
+    }
+
+    private static int buttonAt(List<ThreadAction> buttons, int right, double x, double dy) {
+        if (dy < BUTTON_TOP || dy >= BUTTON_TOP + BUTTON_SIZE) return -1;
+        for (int i = 0; i < buttons.size(); i++) {
+            int left = buttonLeft(right, buttons.size(), i);
+            if (x >= left && x < left + BUTTON_SIZE) return i;
+        }
+        return -1;
+    }
+
+    private static int buttonLeft(int right, int count, int index) {
+        return right - 2 - (count - index) * BUTTON_STRIDE;
+    }
+
+    private static void drawButtons(SpruceGuiGraphics graphics, Font font, List<ThreadAction> buttons,
+                                    int right, int y, int mouseX, int mouseY) {
+        int hit = buttonAt(buttons, right, mouseX, mouseY - y);
+        for (int i = 0; i < buttons.size(); i++) {
+            var action = buttons.get(i);
+            int x = buttonLeft(right, buttons.size(), i);
+            int top = y + BUTTON_TOP;
+            graphics.fill(x, top, x + BUTTON_SIZE, top + BUTTON_SIZE,
+                    i == hit ? Theme.BUTTON_HOVER : Theme.BUTTON);
+            int ink = i == hit ? Theme.TEXT : Theme.TEXT_SOFT;
+            int iconX = x + (BUTTON_SIZE - ICON_SIZE) / 2;
+            int iconY = top + (BUTTON_SIZE - ICON_SIZE) / 2;
+            switch (action) {
+                case SNOOZE, UNSNOOZE -> drawIcon(graphics, SNOOZE_ICON, iconX, iconY, action == ThreadAction.UNSNOOZE ? Theme.ACCENT : ink);
+                case SETTLE -> drawIcon(graphics, SETTLE_ICON, iconX, iconY, ink);
+                case UNSETTLE -> graphics.text(font, "↶", x + (BUTTON_SIZE - font.width("↶")) / 2, y + 4, ink, false);
+            }
+            if (i == hit) {
+                String label = switch (action) {
+                    case SNOOZE -> L10n.tr("snooze.action", "Snooze…");
+                    case UNSNOOZE -> L10n.tr("snooze.wake", "Unsnooze");
+                    case SETTLE -> L10n.tr("chat.sidebar.settle", "Settle thread");
+                    case UNSETTLE -> L10n.tr("chat.sidebar.unsettle", "Unsettle thread");
+                };
+                graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(label), 180), mouseX, mouseY);
             }
         }
     }
@@ -287,7 +356,7 @@ final class SidebarList extends ScrollableWidget {
     }
 
     private void drawThread(SpruceGuiGraphics graphics, Font font, Entry entry, int left, int right, int y,
-                            boolean hovered) {
+                            boolean hovered, int buttonsWidth) {
         var thread = entry.thread();
         boolean selected = entry.project().source().matches(connections) && thread.id().equals(this.selectedThreadId);
         int bg = selected ? Theme.SELECTED : hovered ? Theme.HOVER : Theme.SIDEBAR;
@@ -295,25 +364,19 @@ final class SidebarList extends ScrollableWidget {
 
         // Line 1: project badge + name, relative time.
         int line1 = y + 4;
-        String time = Theme.relativeTime(thread.updatedAtMillis());
-        int timeW = time.isEmpty() ? 0 : font.width(time);
+        String time = buttonsWidth == 0 ? Theme.relativeTime(thread.updatedAtMillis()) : "";
+        int trailingWidth = buttonsWidth + font.width(time);
         int x = left + 6;
         String projectName = entry.project().name();
-        String icon = entry.project().source().icon();
-        if (!icon.isEmpty()) {
-            graphics.text(font, icon, x, line1, Theme.ACCENT, false);
-            x += font.width(icon) + 3;
-        }
         if (!projectName.isEmpty()) {
             x += badge(graphics, font, thread.projectId(), projectName, x, line1, bg) + 4;
-            String name = Theme.ellipsize(font, projectName.equals(entry.project().source().name()) ? projectName
-                    : projectName + " · " + entry.project().source().name(), right - 6 - timeW - 4 - x);
+            String name = Theme.ellipsize(font, projectName, right - 10 - trailingWidth - x);
             graphics.text(font, name, x, line1, Theme.MUTED, false);
         }
-        if (timeW > 0) graphics.text(font, time, right - 5 - timeW, line1, Theme.FAINT, false);
+        if (!time.isEmpty()) graphics.text(font, time, right - 5 - trailingWidth, line1, Theme.FAINT, false);
 
-        // Line 2: title, status.
-        int line2 = y + 15;
+        // Line 2: environment icon, title, status.
+        int line2 = y + TITLE_TOP;
         var status = status(thread);
         int titleRight = right - 5;
         if (status != null) {
@@ -325,37 +388,44 @@ final class SidebarList extends ScrollableWidget {
             if (!label.isEmpty()) graphics.text(font, label, right - 5 - font.width(label), line2, status.color(), false);
             titleRight = dotX - 4;
         }
-        String title = Theme.ellipsize(font, Theme.orDefault(thread.title(), L10n.tr("chat.thread.untitled", "New thread")), titleRight - (left + 6));
-        graphics.text(font, title, left + 6, line2, selected ? Theme.TEXT : Theme.TEXT_SOFT, false);
+        int titleX = drawConnectionIcon(graphics, font, entry, left + 6, line2);
+        String title = Theme.ellipsize(font, Theme.orDefault(thread.title(), L10n.tr("chat.thread.untitled", "New thread")), titleRight - titleX);
+        graphics.text(font, title, titleX, line2, selected ? Theme.TEXT : Theme.TEXT_SOFT, false);
+    }
+
+    private static int drawConnectionIcon(SpruceGuiGraphics graphics, Font font, Entry entry, int x, int y) {
+        String icon = entry.project().source().icon();
+        if (icon.isEmpty()) return x;
+        graphics.text(font, icon, x, y, Theme.ACCENT, false);
+        return x + font.width(icon) + 3;
     }
 
     private void drawCompact(SpruceGuiGraphics graphics, Font font, Entry entry, int left, int right, int y,
-                             boolean hovered) {
+                             boolean hovered, int buttonsWidth) {
         var thread = entry.thread();
         boolean selected = entry.project().source().matches(connections) && thread.id().equals(this.selectedThreadId);
         if (selected) graphics.fill(left, y, right, y + COMPACT, Theme.SELECTED);
         else if (hovered) graphics.fill(left, y, right, y + COMPACT, Theme.HOVER);
         int textY = y + (COMPACT - font.lineHeight) / 2 + 1;
         String initials = Theme.initials(entry.project().name());
-        int x = left + 6;
+        int x = drawConnectionIcon(graphics, font, entry, left + 6, textY);
         graphics.text(font, initials, x, textY, Theme.FAINT, false);
         x += font.width("WW") + 4;
         boolean snoozed = thread.organization() == ThreadOrganization.SNOOZED;
         String time = snoozed ? Theme.timeUntil(thread.snoozedUntilMillis(), System.currentTimeMillis())
                 : Theme.relativeTime(thread.updatedAtMillis());
-        int clockWidth = snoozed ? 10 : 0;
-        int timeW = clockWidth + (time.isEmpty() ? 0 : font.width(time) + 4);
-        if (snoozed) {
-            int cx = right - 5 - font.width(time) - clockWidth;
-            int cy = textY;
-            Theme.outline(graphics, cx + 1, cy + 1, 6, 6, Theme.ACCENT);
-            graphics.fill(cx, cy, cx + 2, cy + 1, Theme.ACCENT);
-            graphics.fill(cx + 6, cy, cx + 8, cy + 1, Theme.ACCENT);
-            graphics.fill(cx + 3, cy + 2, cx + 4, cy + 5, Theme.ACCENT);
-            graphics.fill(cx + 4, cy + 4, cx + 5, cy + 5, Theme.ACCENT);
+        int trailingWidth = buttonsWidth;
+        if (buttonsWidth == 0) {
+            int timeX = right - 5 - font.width(time);
+            if (snoozed) drawIcon(graphics, SNOOZE_ICON, timeX - 10, textY, Theme.ACCENT);
+            if (!time.isEmpty()) graphics.text(font, time, timeX, textY, snoozed ? Theme.ACCENT : Theme.FAINT, false);
+            trailingWidth = (snoozed ? 10 : 0) + (time.isEmpty() ? 0 : font.width(time) + 4);
         }
-        String title = Theme.ellipsize(font, Theme.orDefault(thread.title(), L10n.tr("chat.thread.untitled", "New thread")), right - 5 - timeW - x);
+        String title = Theme.ellipsize(font, Theme.orDefault(thread.title(), L10n.tr("chat.thread.untitled", "New thread")), right - 5 - trailingWidth - x);
         graphics.text(font, title, x, textY, selected ? Theme.TEXT : Theme.MUTED, false);
-        if (!time.isEmpty()) graphics.text(font, time, right - 5 - font.width(time), textY, snoozed ? Theme.ACCENT : Theme.FAINT, false);
+    }
+
+    private static void drawIcon(SpruceGuiGraphics graphics, Identifier sprite, int x, int y, int color) {
+        graphics.vanilla().blitSprite(RenderPipelines.GUI_TEXTURED, sprite, x, y, ICON_SIZE, ICON_SIZE, color);
     }
 }

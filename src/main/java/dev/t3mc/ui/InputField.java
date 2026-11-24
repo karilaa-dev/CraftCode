@@ -44,6 +44,25 @@ final class InputField extends SpruceTextFieldWidget {
     }
 
     @Override
+    public boolean capturesInput() {
+        return this.isEditorActive();
+    }
+
+    @Override
+    public void setFocused(boolean focused) {
+        boolean wasEditing = this.isEditorActive();
+        super.setFocused(focused);
+        if (wasEditing != this.isEditorActive()) this.client.onTextInputFocusChange(this, this.isEditorActive());
+    }
+
+    @Override
+    public void setActive(boolean active) {
+        boolean wasEditing = this.isEditorActive();
+        super.setActive(active);
+        if (wasEditing != this.isEditorActive()) this.client.onTextInputFocusChange(this, this.isEditorActive());
+    }
+
+    @Override
     protected boolean onKeyPress(KeyEvent event) {
         if (this.masked && (event.isCopy() || event.isCut())) return true; // never copy secrets out
         boolean enter = event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER;

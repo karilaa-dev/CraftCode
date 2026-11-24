@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 
 /**
  * Conversation transcript laid out like the T3 Code desktop app: the user's message as a right-aligned bubble, the
@@ -42,7 +44,7 @@ final class TranscriptView extends ScrollableWidget {
     private static final int DISCLOSURE = 13;
     private static final int WORK_INDENT = 10;
     private static final int TOOL_MAX_LINES = 6;
-    private static final int WORK_MAX_LINES = 14;
+    private static final int NOTE_MAX_LINES = 14;
     private static final int SHEET_PAD = 5;
 
     private enum Variant { FINAL, WORK, TOOL, NOTE, USER }
@@ -76,12 +78,18 @@ final class TranscriptView extends ScrollableWidget {
         private @Nullable String threadId;
         private final Set<String> expanded = new HashSet<>();
 
+        private final Map<String, CompletableFuture<List<ChatMessage>>> activity = new HashMap<>();
+        private long revision;
+
         void reset() {
             this.threadId = null;
+            this.activity.clear();
             this.expanded.clear();
         }
     }
 
+    private final BiFunction<String, TranscriptTurns.Turn, CompletableFuture<List<ChatMessage>>> loadWork;
+    private long laidRevision;
     private final ChatImagePreviews previews;
     private final State state;
     private final Map<String, Laid> layoutCache = new HashMap<>();
@@ -100,11 +108,13 @@ final class TranscriptView extends ScrollableWidget {
     private int copiedX, copiedY;
     private long copiedAt;
 
-    TranscriptView(Position position, int width, int height, ChatImagePreviews previews, State state) {
+    TranscriptView(Position position, int width, int height, ChatImagePreviews previews, State state,
+                   BiFunction<String, TranscriptTurns.Turn, CompletableFuture<List<ChatMessage>>> loadWork) {
         super(position, width, height);
         this.previews = Objects.requireNonNull(previews, "previews");
         this.state = Objects.requireNonNull(state, "state");
         this.expanded = state.expanded;
+        this.loadWork = loadWork;
     }
 
     /** Shows a placeholder instead of messages. */
@@ -128,7 +138,7 @@ final class TranscriptView extends ScrollableWidget {
         boolean stick = forceBottom || this.atBottom();
         boolean sameThread = Objects.equals(threadId, this.state.threadId);
         if (!sameThread) {
-            this.expanded.clear();
+            this.state.reset();
             this.layoutCache.clear();
             this.copiedKey = null;
             this.state.threadId = threadId;
@@ -141,8 +151,12 @@ final class TranscriptView extends ScrollableWidget {
             this.running = running;
             this.turns = TranscriptTurns.group(this.messages, running);
             var keys = new HashSet<String>();
-            for (var turn : this.turns) keys.add(turn.key());
+            for (var turn : this.turns) {
+                keys.add(turn.key());
+                if (turn.active()) this.state.activity.remove(turn.key());
+            }
             this.expanded.retainAll(keys);
+            this.state.activity.keySet().retainAll(keys);
             this.relayout();
             var images = new ArrayList<ChatImage>();
             for (var message : this.messages) images.addAll(message.images());
@@ -180,12 +194,30 @@ final class TranscriptView extends ScrollableWidget {
         this.hits.clear();
         this.activePreview = "";
         this.laidWidth = this.width;
+        this.laidRevision = this.state.revision;
         var live = new HashMap<String, Laid>();
         int left = this.left();
         int column = this.columnWidth();
         int y = this.pad();
 
         for (var turn : this.turns) {
+            boolean open = this.expanded.contains(turn.key());
+            String workStatus = "";
+            if (open && turn.canLoadWork()) {
+                var result = this.state.activity.get(turn.key());
+                if (result == null) {
+                    result = this.loadWork.apply(this.state.threadId, turn);
+                    this.state.activity.put(turn.key(), result);
+                    result.whenCompleteAsync((unused, error) -> this.state.revision++, this.client);
+                }
+                if (!result.isDone()) workStatus = L10n.tr("chat.work.loading", "Loading activity…");
+                else if (result.isCompletedExceptionally())
+                    workStatus = L10n.tr("chat.work.load_failed", "Couldn’t load activity. Close and reopen to retry.");
+                else {
+                    turn = turn.withActivity(result.join());
+                    if (turn.work().isEmpty()) workStatus = L10n.tr("chat.work.empty", "No activity recorded.");
+                }
+            }
             if (turn.user() != null) y = this.placeUser(turn.user(), left, column, y, live) + MESSAGE_GAP;
 
             int groupTop = y;
@@ -195,7 +227,6 @@ final class TranscriptView extends ScrollableWidget {
             boolean showDisclosure = turn.hasWork() || turn.active();
             if (showDisclosure) {
                 hasGroup = true;
-                boolean open = turn.hasWork() && this.expanded.contains(turn.key());
                 int height = DISCLOSURE;
                 if (turn.active() && !open && turn.latestWork() != null) {
                     this.activePreview = firstLine(turn.latestWork().text());
@@ -214,6 +245,14 @@ final class TranscriptView extends ScrollableWidget {
                         y = this.placeMessage(message, variant, left + WORK_INDENT, column - WORK_INDENT, y, live);
                         groupBottom = y;
                         y += 4;
+                    }
+                    if (!workStatus.isEmpty()) {
+                        for (var line : this.client.font.split(Component.literal(workStatus), column - WORK_INDENT)) {
+                            this.ops.add(new Op(OpKind.TEXT, left + WORK_INDENT, y, column - WORK_INDENT,
+                                    this.client.font.lineHeight, line, Theme.FAINT, null));
+                            y += this.lineHeight();
+                        }
+                        groupBottom = y;
                     }
                     // Guide line down the left of the expanded work log.
                     this.ops.add(new Op(OpKind.FILL, left + 3, top, 1, Math.max(1, y - 4 - top), null, Theme.RULE, null));
@@ -334,7 +373,7 @@ final class TranscriptView extends ScrollableWidget {
                 var styled = MessageFormatter.colored(text.strip(), color);
                 if (variant == Variant.NOTE) styled.withStyle(s -> s.withItalic(true));
                 var lines = new ArrayList<>(font.split(styled, width));
-                int cap = variant == Variant.TOOL ? TOOL_MAX_LINES : WORK_MAX_LINES;
+                int cap = variant == Variant.TOOL ? TOOL_MAX_LINES : NOTE_MAX_LINES;
                 int hidden = lines.size() - cap;
                 if (hidden > 0) lines.subList(cap, lines.size()).clear();
                 for (var line : lines) {
@@ -353,10 +392,8 @@ final class TranscriptView extends ScrollableWidget {
             }
             case FINAL, WORK -> {
                 int base = variant == Variant.FINAL ? Theme.TEXT : Theme.TEXT_SOFT;
-                int cap = variant == Variant.WORK ? WORK_MAX_LINES : Integer.MAX_VALUE;
                 String body = text.isBlank() && message.streaming() ? "" : text;
-                int end = this.layoutMarkdown(out, Markdown.parse(body), base, width, y, cap);
-                y = end;
+                y = this.layoutMarkdown(out, Markdown.parse(body), base, width, y);
                 maxW = width;
                 if (message.streaming() && variant == Variant.FINAL) {
                     // Blinking caret after the last line.
@@ -373,18 +410,12 @@ final class TranscriptView extends ScrollableWidget {
     }
 
     /** Lays out Markdown blocks starting at {@code y}; returns the y below the last line. */
-    private int layoutMarkdown(List<Op> out, List<Markdown.Block> blocks, int base, int width, int y, int maxLines) {
+    private int layoutMarkdown(List<Op> out, List<Markdown.Block> blocks, int base, int width, int y) {
         var font = this.client.font;
         int lh = this.lineHeight();
-        int lines = 0;
         Markdown.Kind previous = null;
-        boolean truncated = false;
 
         for (var block : blocks) {
-            if (lines >= maxLines) {
-                truncated = true;
-                break;
-            }
             if (previous != null) {
                 boolean listRun = isList(previous) && isList(block.kind());
                 boolean tableRun = previous == Markdown.Kind.TABLE_ROW && block.kind() == Markdown.Kind.TABLE_ROW;
@@ -394,7 +425,6 @@ final class TranscriptView extends ScrollableWidget {
             switch (block.kind()) {
                 case PARAGRAPH, TABLE_ROW -> {
                     for (var line : font.split(MessageFormatter.inline(block.spans(), base, false), width)) {
-                        if (lines++ >= maxLines) break;
                         out.add(new Op(OpKind.TEXT, 0, y, font.width(line), font.lineHeight, line, base, null));
                         y += lh;
                     }
@@ -403,7 +433,6 @@ final class TranscriptView extends ScrollableWidget {
                 case HEADING -> {
                     int color = block.level() <= 2 ? Theme.TEXT : Theme.TEXT_SOFT;
                     for (var line : font.split(MessageFormatter.inline(block.spans(), color, true), width)) {
-                        if (lines++ >= maxLines) break;
                         out.add(new Op(OpKind.TEXT, 0, y, font.width(line), font.lineHeight, line, color, null));
                         y += lh;
                     }
@@ -423,7 +452,6 @@ final class TranscriptView extends ScrollableWidget {
                     out.add(new Op(OpKind.TEXT, indent, y, font.width(markerSeq), font.lineHeight, markerSeq, Theme.MUTED, null));
                     if (split.isEmpty()) y += lh;
                     for (var line : split) {
-                        if (lines++ >= maxLines) break;
                         out.add(new Op(OpKind.TEXT, indent + markerW, y, font.width(line), font.lineHeight, line, base, null));
                         y += lh;
                     }
@@ -432,7 +460,6 @@ final class TranscriptView extends ScrollableWidget {
                 case QUOTE -> {
                     int top = y;
                     for (var line : font.split(MessageFormatter.inline(block.spans(), Theme.MUTED, false), width - 8)) {
-                        if (lines++ >= maxLines) break;
                         out.add(new Op(OpKind.TEXT, 8, y, font.width(line), font.lineHeight, line, Theme.MUTED, null));
                         y += lh;
                     }
@@ -452,11 +479,9 @@ final class TranscriptView extends ScrollableWidget {
                     for (String raw : code) {
                         var split = font.split(MessageFormatter.colored(raw.isEmpty() ? " " : raw, Theme.CODE), inner);
                         for (var line : split) {
-                            if (lines++ >= maxLines) break;
                             out.add(new Op(OpKind.TEXT, 5, y, font.width(line), font.lineHeight, line, Theme.CODE, null));
                             y += lh;
                         }
-                        if (lines >= maxLines) break;
                     }
                     y += 2;
                     out.add(fillIndex, new Op(OpKind.FILL, 0, top, width, y - top, null, Theme.CODE_BG, null));
@@ -467,12 +492,6 @@ final class TranscriptView extends ScrollableWidget {
                 }
             }
         }
-        if (truncated || lines > maxLines) {
-            y += 2;
-            var more = MessageFormatter.colored(L10n.tr("chat.transcript.copy_full", "… right-click to copy the full message"), Theme.FAINT).getVisualOrderText();
-            out.add(new Op(OpKind.TEXT, 0, y, font.width(more), font.lineHeight, more, Theme.FAINT, null));
-            y += font.lineHeight;
-        }
         return y;
     }
 
@@ -482,7 +501,7 @@ final class TranscriptView extends ScrollableWidget {
 
     @Override
     protected int contentHeight() {
-        if (this.laidWidth != this.width && !this.messages.isEmpty()) this.relayout();
+        if ((this.laidWidth != this.width || this.laidRevision != this.state.revision) && !this.messages.isEmpty()) this.relayout();
         return this.contentHeight;
     }
 
@@ -515,7 +534,11 @@ final class TranscriptView extends ScrollableWidget {
                 return true;
             }
             if (left && hit.kind() == HitKind.TOGGLE && hit.ref() instanceof TranscriptTurns.Turn turn) {
-                if (!this.expanded.remove(turn.key())) this.expanded.add(turn.key());
+                if (!this.expanded.remove(turn.key())) {
+                    var previous = this.state.activity.get(turn.key());
+                    if (previous != null && previous.isCompletedExceptionally()) this.state.activity.remove(turn.key());
+                    this.expanded.add(turn.key());
+                }
                 this.relayout();
                 this.setScroll(this.scroll);
                 this.playDownSound();
@@ -571,7 +594,7 @@ final class TranscriptView extends ScrollableWidget {
     @Override
     protected void drawContent(SpruceGuiGraphics graphics, int top, int mouseX, int mouseY) {
         var font = this.client.font;
-        if (this.laidWidth != this.width && !this.messages.isEmpty()) this.relayout();
+        if ((this.laidWidth != this.width || this.laidRevision != this.state.revision) && !this.messages.isEmpty()) this.relayout();
 
         if (this.turns.isEmpty()) {
             this.drawEmpty(graphics, font);
