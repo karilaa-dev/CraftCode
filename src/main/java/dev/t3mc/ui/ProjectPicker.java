@@ -1,0 +1,113 @@
+package dev.t3mc.ui;
+
+import dev.t3mc.L10n;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
+import dev.lambdaurora.spruceui.Position;
+import dev.lambdaurora.spruceui.render.SpruceGuiGraphics;
+import dev.t3mc.ui.model.ProjectView;
+import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
+/**
+ * Lists every project (including ones without threads) so a new thread is always started in an
+ * explicitly chosen project. Shown in place of the thread list while open.
+ */
+final class ProjectPicker extends ScrollableWidget {
+    private static final int TITLE = 18;
+    private static final int ROW = 22;
+
+    private final Consumer<String> onPick;
+    private List<ProjectView> projects = List.of();
+    private @Nullable String suggestedId;
+
+    ProjectPicker(Position position, int width, int height, Consumer<String> onPick) {
+        super(position, width, height);
+        this.onPick = onPick;
+    }
+
+    /** Projects with recent activity first, then the rest in their original order. */
+    void setProjects(List<ProjectView> projects, @Nullable String suggestedId) {
+        var sorted = new ArrayList<>(projects);
+        sorted.sort((a, b) -> Long.compare(latest(b), latest(a)));
+        this.projects = sorted;
+        this.suggestedId = suggestedId;
+        this.setScroll(this.scroll);
+    }
+
+    private static long latest(ProjectView project) {
+        long max = 0;
+        for (var thread : project.threads()) max = Math.max(max, thread.updatedAtMillis());
+        return max;
+    }
+
+    @Override
+    protected int contentHeight() {
+        return TITLE + Math.max(1, this.projects.size()) * ROW + 6;
+    }
+
+    @Override
+    protected boolean onContentClick(double mouseX, double contentY, int button) {
+        if (button != InputConstants.MOUSE_BUTTON_LEFT || contentY < TITLE) return false;
+        int index = (int) ((contentY - TITLE) / ROW);
+        if (index < 0 || index >= this.projects.size()) return false;
+        this.playDownSound();
+        this.onPick.accept(this.projects.get(index).id());
+        return true;
+    }
+
+    @Override
+    protected void drawContent(SpruceGuiGraphics graphics, int top, int mouseX, int mouseY) {
+        var font = this.client.font;
+        int left = this.getX() + 4;
+        int right = this.getEndX() - 6;
+        int rowsEnd = top + TITLE + Math.max(1, this.projects.size()) * ROW;
+        // One sheet behind the title and every row; rows only add opaque hover fills on top.
+        Theme.sheet(graphics, left - 2, top + 2, right + 2, rowsEnd + 2, Theme.SIDEBAR_SHEET);
+        graphics.text(font, L10n.tr("chat.picker.title", "Start a thread in…"), left + 6, top + 6, Theme.MUTED, false);
+
+        if (this.projects.isEmpty()) {
+            String none = Theme.ellipsize(font, L10n.tr("chat.picker.no_projects", "No projects. Add one in T3 Code."), right - left - 12);
+            graphics.text(font, none, left + 6,
+                    top + TITLE + 6, Theme.FAINT, false);
+            return;
+        }
+
+        boolean inside = this.isMouseHovered();
+        for (int i = 0; i < this.projects.size(); i++) {
+            var project = this.projects.get(i);
+            int y = top + TITLE + i * ROW;
+            if (y + ROW < this.getY() || y > this.getEndY()) continue;
+            boolean hovered = inside && mouseY >= y && mouseY < y + ROW && mouseX < this.getEndX() - 5;
+            boolean suggested = project.id().equals(this.suggestedId);
+            int bg = hovered ? Theme.HOVER : Theme.SIDEBAR;
+            if (hovered) graphics.fill(left, y, right, y + ROW, bg);
+            if (suggested) graphics.fill(left, y, left + 2, y + ROW, Theme.ACCENT);
+            if (hovered) graphics.requestCursor(CursorTypes.POINTING_HAND);
+
+            String name = Theme.orDefault(project.name(), project.path());
+            int x = left + 6;
+            int line1 = y + 3;
+            x += SidebarList.badge(graphics, font, project.id(), name, x, line1, bg) + 4;
+            int count = project.threads().size();
+            String countText = count == 0 ? L10n.tr("chat.picker.empty", "empty") : Integer.toString(count);
+            int countW = font.width(countText);
+            graphics.text(font, Theme.ellipsize(font, name, right - 5 - countW - 4 - x), x, line1,
+                    hovered ? Theme.TEXT : Theme.TEXT_SOFT, false);
+            graphics.text(font, countText, right - 5 - countW, line1, Theme.FAINT, false);
+            if (!project.path().isEmpty()) {
+                graphics.text(font, Theme.ellipsize(font, project.path(), right - 5 - (left + 6)), left + 6, y + 13,
+                        Theme.FAINT, false);
+            }
+        }
+    }
+
+    @Override
+    protected @Nullable Component getNarrationMessage() {
+        return Component.literal(L10n.tr("chat.picker.narration", "Choose a project for the new thread"));
+    }
+}

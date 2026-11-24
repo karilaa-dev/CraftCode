@@ -1,0 +1,15 @@
+.gradle/
+build/
+art/provider-icons/variants.zip
+run/
+logs/
+crash-reports/
+publishing/
+.env
+.env.*
+hs_err_pid*.log
+out/
+.idea/
+.vscode/
+*.iml
+.DS_Store

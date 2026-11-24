@@ -1,0 +1,86 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.19.4'
+}
+
+group = 'dev.t3mc'
+version = '0.8.4'
+
+repositories {
+    maven {
+        url = 'https://maven.gegy.dev/'
+        content {
+            includeGroup 'dev.lambdaurora'
+        }
+    }
+    mavenCentral()
+}
+
+configurations {
+    spruceUiDistribution {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+def spruceUiVersion = '12.0.0+26.3'
+def spruceUiArtwork = layout.projectDirectory.dir('gradle/spruceui-assets')
+def packageSpruceUi = tasks.register('packageSpruceUi', Zip) {
+    archiveFileName = "spruceui-${spruceUiVersion}.jar"
+    destinationDirectory = layout.buildDirectory.dir('packaged-libraries')
+    from({ zipTree(configurations.spruceUiDistribution.singleFile) }) {
+        exclude { entry -> spruceUiArtwork.file(entry.path).asFile.isFile() }
+    }
+    from(spruceUiArtwork)
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:26.3'
+    implementation 'net.fabricmc:fabric-loader:0.19.5'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.161.0+26.3'
+    implementation "dev.lambdaurora:spruceui:${spruceUiVersion}"
+    spruceUiDistribution "dev.lambdaurora:spruceui:${spruceUiVersion}"
+    include 'dev.yumi.mc.core:yumi-mc-foundation:1.1.3+26.2'
+
+    // Loom's nested JARs are non-transitive. Include the WebP reader and its runtime modules.
+    def imageIoVersion = '3.15.3'
+    implementation "com.twelvemonkeys.imageio:imageio-webp:${imageIoVersion}"
+    ['imageio-webp', 'imageio-core', 'imageio-metadata'].each {
+        include "com.twelvemonkeys.imageio:${it}:${imageIoVersion}"
+    }
+    ['common-lang', 'common-io', 'common-image'].each {
+        include "com.twelvemonkeys.common:${it}:${imageIoVersion}"
+    }
+
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+test {
+    useJUnitPlatform()
+}
+
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'spruceUiVersion', spruceUiVersion
+    filesMatching('fabric.mod.json') {
+        expand version: project.version, spruceUiVersion: spruceUiVersion
+    }
+}
+
+tasks.named('jar') {
+    from('LICENSE', 'THIRD_PARTY_NOTICES.md')
+    from(packageSpruceUi.flatMap { it.archiveFile }) {
+        into 'META-INF/jars'
+    }
+}
