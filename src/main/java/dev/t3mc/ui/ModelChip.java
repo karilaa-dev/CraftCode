@@ -58,8 +58,12 @@ final class ModelChip extends FlatButton {
         graphics.text(font, label, x, y, text, false);
         graphics.text(font, "▾", this.getEndX() - 6 - arrowW, y, this.isActive() ? Theme.MUTED : Theme.TEXT_DISABLED, false);
         if (this.isMouseHovered() && !this.detail.isEmpty()) {
-            graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(this.detail), 240),
-                    this.getX(), this.getY() - 4);
+            graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(this.detail),
+                    Math.min(240, this.client.getWindow().getGuiScaledWidth() - 24)),
+                    (width, height, anchorX, y0, w, h) -> new org.joml.Vector2i(
+                            Math.clamp(anchorX, 10, Math.max(10, width - w - 10)),
+                            Math.clamp(y0 - h - 10, 10, Math.max(10, height - h - 10))),
+                    this.getX(), this.getY(), false);
         }
     }
 

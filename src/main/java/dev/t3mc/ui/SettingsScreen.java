@@ -9,6 +9,7 @@ import dev.t3mc.L10n;
 import dev.t3mc.T3McClient;
 import dev.t3mc.auth.T3OAuth;
 import dev.t3mc.ui.model.ColorTheme;
+import dev.t3mc.ui.model.ConnectionProfileView;
 import dev.t3mc.ui.model.ConnectionState;
 import dev.t3mc.ui.model.NotificationMode;
 import dev.t3mc.ui.model.SettingsUpdate;
@@ -46,6 +47,7 @@ public class SettingsScreen extends SpruceScreen {
     private final SettingsView saved;
 
     private final boolean adding;
+    private final boolean serverForm;
     private String profileName = "";
     private String url;
     private String connectionCode = "";
@@ -65,17 +67,19 @@ public class SettingsScreen extends SpruceScreen {
     private int panelBottom;
 
     public SettingsScreen(@Nullable Screen parent, ClientController controller) {
-        this(parent, controller, false);
+        this(parent, controller, false, null);
     }
 
-    SettingsScreen(@Nullable Screen parent, ClientController controller, boolean adding) {
+    SettingsScreen(@Nullable Screen parent, ClientController controller, boolean adding, @Nullable ConnectionProfileView profile) {
         super(Component.literal(adding ? L10n.tr("settings.title.add", "Add MCP server")
-                : L10n.tr("settings.title", "T3 Code Settings")));
+                : profile != null ? L10n.tr("settings.edit", "Edit server") : L10n.tr("settings.title", "T3 Code Settings")));
         this.adding = adding;
+        this.serverForm = adding || profile != null;
+        if (profile != null) this.profileName = profile.name();
         this.parent = parent;
         this.controller = controller;
         this.saved = controller.snapshot().settings();
-        this.url = adding ? "" : this.saved.httpUrl();
+        this.url = profile == null ? "" : profile.endpoint();
         this.notificationMode = this.saved.notificationMode();
         Theme.sync(this.saved);
         Theme.setTransparency(this.saved.transparency());
@@ -108,76 +112,18 @@ public class SettingsScreen extends SpruceScreen {
         int w = this.panelW - 20;
         int fx = x + labelW;
         int fw = w - labelW;
-        int y = tight ? 30 : 32;
+        int y = 30;
 
-        if (this.adding) {
-            this.labelRow(y, L10n.tr("settings.name", "Name"));
-            var name = new InputField(Position.of(fx, y), fw, L10n.tr("settings.name.narration", "Server name"),
-                    L10n.tr("settings.name.placeholder", "Optional server name"));
-            name.setText(this.profileName);
-            name.setChangedListener(text -> this.profileName = text);
-            this.addRenderableWidget(name);
-            y += 18 + rowGap;
-        }
-
-        // Connection: one T3 URL plus an optional, masked connection code.
-        this.labelRow(y, L10n.tr("settings.url", "T3 URL"));
-        var url = new InputField(Position.of(fx, y), fw, L10n.tr("settings.url", "T3 URL"),
-                L10n.tr("settings.url.placeholder", "T3 connection link or server URL"));
-        url.setText(this.url);
-        url.onEnter(this::save);
-        InputField first = this.addRenderableWidget(url);
-        y += 18 + rowGap;
-
-        this.labelRow(y, L10n.tr("settings.code", "Code"));
-        var code = new InputField(Position.of(fx, y), fw, L10n.tr("settings.code.narration", "Connection code"),
-                L10n.tr("settings.code.placeholder", "Optional connection code")).masked();
-        code.setText(this.connectionCode);
-        code.setChangedListener(text -> {
-            this.connectionCode = text;
-            this.inviteEndpoint = null;
-            this.clearValidation();
-        });
-        url.setChangedListener(text -> {
-            this.url = text;
-            if (this.inviteEndpoint != null && !this.inviteEndpoint.equals(text)) code.setText("");
-            this.clearValidation();
-        });
-        // Move a pasted invite's secret out of the visible URL before the next frame.
-        url.afterPaste(() -> {
-            try {
-                var invite = T3OAuth.connectionAddress(this.url);
-                if (!invite.code().isEmpty()) {
-                    url.setText(invite.endpoint());
-                    code.setText(invite.code());
-                    this.inviteEndpoint = invite.endpoint();
-                }
-            } catch (IOException ignored) { /* The player can finish editing before Save validates it. */ }
-        });
-        code.onEnter(this::save);
-        this.addRenderableWidget(code);
-        y += 18 + 3;
-        String help = !this.adding && this.saved.hasSavedSession()
-                ? L10n.tr("settings.code.help.saved",
-                        "Leave the code blank to keep the saved login, or to sign in with your browser for a new URL.")
-                : L10n.tr("settings.code.help",
-                        "Leave the code blank to sign in with your browser, or paste a connection code from T3 Code.");
-        if (!roomy) code.setTooltip(Component.literal(help));
-        y = this.wrapNote(y, fx, help, Theme.FAINT, fw, noteLines);
-        y += rowGap + sectionGap;
-
-        if (this.adding) {
-            if (!this.error.isEmpty()) y = this.wrapNote(this.validationNotes, y, x, this.error, Theme.RED, w, 2) + rowGap;
-            String connect = L10n.tr("settings.connect", "Connect");
-            String cancel = L10n.tr("settings.cancel", "Cancel");
-            int connectW = this.buttonWidth(connect, 100);
-            int cancelW = this.buttonWidth(cancel, 56);
-            this.addRenderableWidget(new FlatButton(Position.of(x + w - connectW, y), connectW, 20, connect, FlatButton.Kind.PRIMARY, b -> this.save()));
-            this.addRenderableWidget(new FlatButton(Position.of(x + w - connectW - 4 - cancelW, y), cancelW, 20, cancel, b -> this.onClose()));
-            this.panelBottom = y + 30;
-            this.setFocused(first);
+        if (this.serverForm) {
+            buildServerForm(y, rowGap, sectionGap, roomy, fx, fw, x, w, noteLines);
             return;
         }
+        int half = (w - 4) / 2;
+        this.addRenderableWidget(new FlatButton(Position.of(x, y), half, 18, L10n.tr("chat.workspace.servers", "Servers"),
+                b -> minecraft.gui.setScreen(new ConnectionsScreen(parent, controller))));
+        this.addRenderableWidget(new FlatButton(Position.of(x + half + 4, y), w - half - 4, 18,
+                L10n.tr("settings.other", "Other settings"), FlatButton.Kind.SELECTED, b -> {}));
+        y += 25;
 
         // Notifications
         this.labelRow(y, L10n.tr("settings.notify", "Notify via"));
@@ -192,6 +138,10 @@ public class SettingsScreen extends SpruceScreen {
             int bw = mode == NotificationMode.OFF ? fw - (third + 4) * 2 : third;
             this.addRenderableWidget(new FlatButton(Position.of(bx, y), bw, 18, label,
                     this.notificationMode == mode ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL, b -> {
+                if (!controller.setNotifications(mode)) {
+                    fail(L10n.tr("settings.write_error", "Could not save settings."));
+                    return;
+                }
                 this.notificationMode = mode;
                 this.rebuildKeepingFocus();
             }));
@@ -279,25 +229,76 @@ public class SettingsScreen extends SpruceScreen {
             y = this.wrapNote(this.validationNotes, y, x, this.error, Theme.RED, w, roomy ? 4 : 2) + sectionGap;
 
         // Actions
-        boolean connected = this.controller.snapshot().connection().state() != ConnectionState.DISCONNECTED;
-        String saveLabel = L10n.tr("settings.save", "Save & connect");
-        String cancelLabel = L10n.tr("settings.cancel", "Cancel");
-        String disconnectLabel = L10n.tr("settings.disconnect", "Disconnect");
-        int saveW = this.buttonWidth(saveLabel, 100);
-        int cancelW = this.buttonWidth(cancelLabel, 56);
-        this.addRenderableWidget(new FlatButton(Position.of(x + w - saveW, y), saveW, 20, saveLabel,
-                FlatButton.Kind.PRIMARY, b -> this.save()));
-        this.addRenderableWidget(new FlatButton(Position.of(x + w - saveW - 4 - cancelW, y), cancelW, 20, cancelLabel, b -> this.onClose()));
-        if (connected) {
-            int disconnectW = Math.min(this.buttonWidth(disconnectLabel, 72), w - saveW - cancelW - 12);
-            this.addRenderableWidget(new FlatButton(Position.of(x, y), disconnectW, 20, disconnectLabel, FlatButton.Kind.DANGER, b -> {
-                this.controller.disconnect();
-                this.rebuildWidgets();
-            }));
-        }
-        this.panelBottom = Math.min(y + 20 + 10, this.height);
+        String done = L10n.tr("settings.done", "Done");
+        int doneW = buttonWidth(done, 64);
+        this.addRenderableWidget(new FlatButton(Position.of(x + w - doneW, y), doneW, 20, done, thisButton -> onClose()));
+        this.panelBottom = Math.min(y + 30, height);
+    }
 
-        if (this.getFocused() == null) this.setFocused(first);
+    private void buildServerForm(int y, int rowGap, int sectionGap, boolean roomy, int fx, int fw, int x, int w, int noteLines) {
+        this.labelRow(y, L10n.tr("settings.name", "Name"));
+        var name = new InputField(Position.of(fx, y), fw, L10n.tr("settings.name.narration", "Server name"),
+                L10n.tr("settings.name.placeholder", "Optional server name"));
+        name.setText(this.profileName);
+        name.setChangedListener(text -> this.profileName = text);
+        this.addRenderableWidget(name);
+        y += 18 + rowGap;
+
+        // Connection: one T3 URL plus an optional, masked connection code.
+        this.labelRow(y, L10n.tr("settings.url", "T3 URL"));
+        var url = new InputField(Position.of(fx, y), fw, L10n.tr("settings.url", "T3 URL"),
+                L10n.tr("settings.url.placeholder", "T3 connection link or server URL"));
+        url.setText(this.url);
+        url.onEnter(this::save);
+        InputField first = this.addRenderableWidget(url);
+        y += 18 + rowGap;
+
+        this.labelRow(y, L10n.tr("settings.code", "Code"));
+        var code = new InputField(Position.of(fx, y), fw, L10n.tr("settings.code.narration", "Connection code"),
+                L10n.tr("settings.code.placeholder", "Optional connection code")).masked();
+        code.setText(this.connectionCode);
+        code.setChangedListener(text -> {
+            this.connectionCode = text;
+            this.inviteEndpoint = null;
+            this.clearValidation();
+        });
+        url.setChangedListener(text -> {
+            this.url = text;
+            if (this.inviteEndpoint != null && !this.inviteEndpoint.equals(text)) code.setText("");
+            this.clearValidation();
+        });
+        // Move a pasted invite's secret out of the visible URL before the next frame.
+        url.afterPaste(() -> {
+            try {
+                var invite = T3OAuth.connectionAddress(this.url);
+                if (!invite.code().isEmpty()) {
+                    url.setText(invite.endpoint());
+                    code.setText(invite.code());
+                    this.inviteEndpoint = invite.endpoint();
+                }
+            } catch (IOException ignored) { /* The player can finish editing before Save validates it. */ }
+        });
+        code.onEnter(this::save);
+        this.addRenderableWidget(code);
+        y += 18 + 3;
+        String help = !this.adding && this.saved.hasSavedSession()
+                ? L10n.tr("settings.code.help.saved",
+                        "Leave the code blank to keep the saved login, or to sign in with your browser for a new URL.")
+                : L10n.tr("settings.code.help",
+                        "Leave the code blank to sign in with your browser, or paste a connection code from T3 Code.");
+        if (!roomy) code.setTooltip(Component.literal(help));
+        y = this.wrapNote(y, fx, help, Theme.FAINT, fw, noteLines);
+        y += rowGap + sectionGap;
+
+        if (!this.error.isEmpty()) y = this.wrapNote(this.validationNotes, y, x, this.error, Theme.RED, w, 2) + rowGap;
+        String connect = L10n.tr("settings.connect", "Connect");
+        String cancel = L10n.tr("settings.cancel", "Cancel");
+        int connectW = this.buttonWidth(connect, 100);
+        int cancelW = this.buttonWidth(cancel, 56);
+        this.addRenderableWidget(new FlatButton(Position.of(x + w - connectW, y), connectW, 20, connect, FlatButton.Kind.PRIMARY, b -> this.save()));
+        this.addRenderableWidget(new FlatButton(Position.of(x + w - connectW - 4 - cancelW, y), cancelW, 20, cancel, b -> this.onClose()));
+        this.panelBottom = y + 30;
+        this.setFocused(first);
     }
 
     /** Width for a button label: at least {@code min}, wider when the translated label needs it. */
@@ -458,7 +459,7 @@ public class SettingsScreen extends SpruceScreen {
         }
         // Blank code: the backend reuses the saved login for the same endpoint, otherwise signs in via the browser.
         var update = new SettingsUpdate(url, code, this.notificationMode);
-        if (!this.controller.saveProfile(this.adding ? this.profileName.strip() : "", update)) {
+        if (!this.controller.saveProfile(this.profileName.strip(), update)) {
             this.fail(L10n.tr("settings.error.save", "Could not save this server."));
             return;
         }

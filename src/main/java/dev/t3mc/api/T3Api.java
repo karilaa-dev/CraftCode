@@ -366,10 +366,12 @@ public final class T3Api implements ChatImage.PageReader {
         call("t3_thread_configure", args);
     }
 
-    public String launch(String projectId, String title, String message, String clientRequestId) throws IOException {
+    public String launch(String projectId, String title, String message, String clientRequestId, ModelSelection selection) throws IOException {
         JsonObject args = new JsonObject();
-        args.addProperty("projectId", projectId);
+        if (projectId.isEmpty()) args.addProperty("scratch", true);
+        else args.addProperty("projectId", projectId);
         args.addProperty("title", title);
+        if (!selection.modelId().isBlank()) args.add("modelSelection", T3Models.encode(selection));
         if (message != null && !message.isBlank()) args.addProperty("message", message);
         args.addProperty("clientRequestId", clientRequestId);
         return required(call("t3_thread_launch", args), "threadId");

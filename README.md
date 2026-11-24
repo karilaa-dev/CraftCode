@@ -8,11 +8,15 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 
 ## Screenshots
 
-![A T3 Code conversation about a village plugin, open over a Minecraft world.](docs/images/workspace.webp)
+![The unified thread list and a village workshop conversation in Minecraft.](docs/images/workspace.webp)
 
-| Choose a model | Answer an agent question |
+| New thread draft | Server visibility and icons |
 | --- | --- |
-| [![The model picker showing Codex models and the selected model’s effort and speed settings.](docs/images/model-picker.webp)](docs/images/model-picker.webp) | [![An agent asks what a waypoint sign should display and offers three choices.](docs/images/agent-question.webp)](docs/images/agent-question.webp) |
+| [![An unsent draft in the project composer.](docs/images/new-thread.webp)](docs/images/new-thread.webp) | [![Saved servers and linked environments in Settings.](docs/images/servers.webp)](docs/images/servers.webp) |
+
+| Choose a model | Answer an agent question | Customize a theme |
+| --- | --- | --- |
+| [![The model picker with two Codex models.](docs/images/model-picker.webp)](docs/images/model-picker.webp) | [![An agent asks which sign belongs above a station platform.](docs/images/agent-question.webp)](docs/images/agent-question.webp) | [![A custom brown palette in the theme editor.](docs/images/custom-brown.webp)](docs/images/custom-brown.webp) |
 
 ## Installation
 
@@ -20,6 +24,6 @@ Chat with your T3 Code agents while you play Minecraft. This client-side Fabric 
 2. Download the mod JAR from [Modrinth](https://modrinth.com/mod/t3-mc/versions). You can also get it from [GitHub Releases](https://github.com/karilaa-dev/t3-mc/releases/latest).
 3. Put the JAR in your instance’s `mods` folder alongside [Fabric API](https://github.com/FabricMC/fabric/releases) **0.161.0** or newer for Minecraft 26.3, then launch the game.
 
-Open **T3 Code** from the title screen or press **U** in a world. Select **Connect**, paste your T3 connection link or MCP URL, and choose **Save & connect**.
+Open **T3 Code** from the title screen or press **U** in a world. Open **Settings → Servers → Add server**, paste your T3 connection link or MCP URL, and choose **Connect**.
 
-In **Settings → Theme**, choose a preset or click **Customize…** to edit its 12 colors with hex codes or RGB sliders. **Save as custom** keeps your palette available when you switch themes.
+In **Settings → Other settings → Theme**, choose a preset or click **Customize…** to edit its 12 colors with hex codes or RGB sliders. **Save as custom** keeps your palette available when you switch themes.

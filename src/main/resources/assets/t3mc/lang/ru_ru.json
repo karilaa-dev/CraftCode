@@ -507,5 +507,20 @@
   "t3mc.time.days": "%s дн.",
   "t3mc.time.hours": "%s ч",
   "t3mc.time.minutes": "%s мин",
-  "t3mc.time.now": "сейчас"
+  "t3mc.time.now": "сейчас",
+  "t3mc.sidebar.search": "Поиск",
+  "t3mc.sidebar.filter": "Фильтр проектов",
+  "t3mc.sidebar.filter_short": "Фильтр",
+  "t3mc.sidebar.all": "Все проекты",
+  "t3mc.sidebar.no_matches": "Нет подходящих веток",
+  "t3mc.chat.draft.scratch": "Без проекта",
+  "t3mc.chat.draft.scratch_prompt": "Что создадим?",
+  "t3mc.chat.draft.prompt": "Что создадим в %s?",
+  "t3mc.settings.edit": "Изменить сервер",
+  "t3mc.settings.other": "Другие настройки",
+  "t3mc.settings.done": "Готово",
+  "t3mc.settings.hidden": "Скрыто",
+  "t3mc.settings.shown": "Видно",
+  "t3mc.settings.icon": "Значок: %s",
+  "t3mc.settings.write_error": "Не удалось сохранить настройки."
 }

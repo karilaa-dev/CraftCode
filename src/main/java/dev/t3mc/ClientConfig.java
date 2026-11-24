@@ -17,7 +17,14 @@ import java.util.*;
 /** Local to the Minecraft instance. Never serialized into a game packet. */
 record ClientConfig(List<Profile> profiles, String activeProfileId, NotificationMode notificationMode, ColorTheme theme,
                     List<ModelFavorite> favoriteModels, int transparency, ColorTheme.Palette customPalette) {
-    record Profile(String endpoint, String name, String token, boolean includeLinked, boolean linksExpanded) {
+    record Profile(String endpoint, String name, String token, boolean includeLinked, boolean linksExpanded,
+                   Map<String, EnvironmentDisplay> displays) {
+        Profile {
+            displays = displays == null ? Map.of() : Map.copyOf(displays);
+        }
+        EnvironmentDisplay display(String environment) {
+            return displays.getOrDefault(environment, EnvironmentDisplay.DEFAULT);
+        }
         @Override public String toString() { return name; }
     }
 
@@ -74,12 +81,26 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
     }
     private ClientConfig withLinkSettings(String profileId, boolean include, boolean expanded) {
         var updated = profiles.stream().map(p -> p.endpoint.equals(profileId)
-                ? new Profile(p.endpoint, p.name, p.token, include, expanded) : p).toList();
+                ? new Profile(p.endpoint, p.name, p.token, include, expanded, p.displays) : p).toList();
         return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
+    ClientConfig withDisplay(String id, String environment, EnvironmentDisplay display) {
+        var next = profiles.stream().map(p -> {
+            if (!p.endpoint.equals(id)) return p;
+            var displays = new HashMap<>(p.displays);
+            displays.put(environment, display);
+            return new Profile(id, p.name, p.token, p.includeLinked, p.linksExpanded, displays);
+        }).toList();
+        return new ClientConfig(next, activeProfileId, notificationMode, theme, favoriteModels, transparency, customPalette);
+    }
+
+    ClientConfig withNotifications(NotificationMode mode) {
+        return new ClientConfig(profiles, activeProfileId, mode, theme, favoriteModels, transparency, customPalette);
+    }
+
     ClientConfig withGrant(String grant) { return withGrant(activeProfileId, grant); }
     ClientConfig withGrant(String profileId, String grant) {
-        var updated = profiles.stream().map(p -> p.endpoint.equals(profileId) ? new Profile(p.endpoint, p.name, grant, p.includeLinked, p.linksExpanded) : p).toList();
+        var updated = profiles.stream().map(p -> p.endpoint.equals(profileId) ? new Profile(p.endpoint, p.name, grant, p.includeLinked, p.linksExpanded, p.displays) : p).toList();
         return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
     ClientConfig withConnection(String endpoint, NotificationMode notifications) { return withProfile("", endpoint, notifications); }
@@ -88,7 +109,7 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
         String name = label == null ? "" : label.strip();
         if (name.isEmpty()) name = previous == null ? URI.create(endpoint).getAuthority() : previous.name;
         var next = new Profile(endpoint, name, previous == null ? "" : previous.token, previous == null || previous.includeLinked,
-                previous == null || previous.linksExpanded);
+                previous == null || previous.linksExpanded, previous == null ? Map.of() : previous.displays);
         var entries = new ArrayList<>(profiles);
         if (previous == null) entries.add(next);
         else entries.set(entries.indexOf(previous), next);
@@ -122,14 +143,14 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
                     var fields = item.getAsJsonObject();
                     boolean include = !fields.has("includeLinked") || p.includeLinked;
                     boolean expanded = include && (!fields.has("linksExpanded") || p.linksExpanded);
-                    entries.put(endpoint, new Profile(endpoint, name, p.token, include, expanded));
+                    entries.put(endpoint, new Profile(endpoint, name, p.token, include, expanded, p.displays));
                 }
                 active = savedEndpoint(raw.has("activeProfileId") ? raw.get("activeProfileId").getAsString() : "", "");
             } else {
                 if (!raw.has("httpUrl") || !raw.has("token")) throw new IOException(tr("config.incomplete", "Incomplete T3 settings file."));
                 String legacyMode = raw.has("transport") ? raw.get("transport").getAsString() : "";
                 active = savedEndpoint(raw.get("httpUrl").getAsString(), legacyMode);
-                if (!active.isEmpty()) entries.put(active, new Profile(active, URI.create(active).getAuthority(), raw.get("token").getAsString(), true, true));
+                if (!active.isEmpty()) entries.put(active, new Profile(active, URI.create(active).getAuthority(), raw.get("token").getAsString(), true, true, Map.of()));
             }
             if (!entries.containsKey(active)) active = entries.isEmpty() ? "" : entries.keySet().iterator().next();
             return new ClientConfig(List.copyOf(entries.values()), active, mode, theme,

@@ -3,11 +3,11 @@ package dev.t3mc.ui.model;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
-public record ConnectionsView(List<ConnectionProfileView> profiles, String activeProfileId, String environmentId, long generation) {
+public record ConnectionsView(List<ConnectionProfileView> profiles, String activeProfileId, String environmentId, long generation, int online, int total) {
     public ConnectionsView {
         profiles = List.copyOf(profiles);
     }
-    public static ConnectionsView empty() { return new ConnectionsView(List.of(), "", "", 0); }
+    public static ConnectionsView empty() { return new ConnectionsView(List.of(), "", "", 0, 0, 0); }
 
     public @Nullable ConnectionProfileView activeProfile() {
         for (var profile : profiles) if (profile.id().equals(activeProfileId)) return profile;

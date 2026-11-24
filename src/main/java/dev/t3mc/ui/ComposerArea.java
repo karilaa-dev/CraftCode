@@ -17,7 +17,7 @@ final class ComposerArea extends SpruceTextAreaWidget {
                 MessageFormatter.colored(placeholder, Theme.FAINT));
         this.onSubmit = onSubmit;
         this.setBackground(new SimpleColorBackground(Theme.INPUT));
-        this.setBorder(new SimpleBorder(1, Theme.BORDER, Theme.ACCENT));
+        this.setBorder(new SimpleBorder(0, Theme.INPUT, Theme.INPUT));
         this.setEditableColor(Theme.TEXT);
         this.setUneditableColor(Theme.TEXT_DISABLED);
     }

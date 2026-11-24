@@ -86,6 +86,35 @@ class MultiConnectionTest {
         }
     }
 
+    @Test void restoresCombinedSidebarAndRoutesDuplicateIdsThroughTheSelectedRow() throws Exception {
+        Path file = dir.resolve("combined.json");
+        try (var a = new Server("A"); var b = new Server("B")) {
+            ClientConfig.defaults().withProfile("Studio", a.url(), NotificationMode.OFF)
+                    .withProfile("Lab", b.url(), NotificationMode.OFF).save(file);
+            try (var c = new ClientController(file)) {
+                c.restoreWorkspaces();
+                await(() -> c.connections().online() == 4);
+                assertEquals(4, c.connections().total());
+                var peer = c.snapshot().environments().stream()
+                        .filter(e -> e.profileId().equals(a.url()) && e.environmentId().equals("peer")).findFirst().orElseThrow();
+                assertEquals("same", peer.projects().getFirst().threads().getFirst().id());
+                c.openThread(peer, "same");
+                await(() -> connected(c, "A-peer") && "same".equals(c.snapshot().selectedThreadId()));
+                assertTrue(c.setDisplay(a.url(), "peer", new EnvironmentDisplay(true, "★")));
+                assertEquals(3, c.snapshot().environments().size());
+                assertNull(c.snapshot().selectedThreadId());
+                assertEquals(4, c.connections().online());
+                assertEquals(new EnvironmentDisplay(true, "★"), ClientConfig.load(file).profile(a.url()).display("peer"));
+                assertTrue(c.setDisplay(a.url(), "peer", new EnvironmentDisplay(false, "★")));
+                assertEquals("same", c.snapshot().selectedThreadId());
+                b.linkStatus = "unreachable";
+                c.refreshLinkedEnvironments(b.url());
+                await(() -> c.connections().online() == 3);
+                assertEquals(4, c.connections().total());
+            }
+        }
+    }
+
     @Test void browsingAnotherProfilesLinksPreservesTheActiveChatAndRoutesOnlyExplicitSwitches() throws Exception {
         try (var a = new Server("A"); var b = new Server("B"); var c = new ClientController(dir.resolve("t3mc.json"))) {
             assertTrue(c.saveProfile("Studio", settings(a)));

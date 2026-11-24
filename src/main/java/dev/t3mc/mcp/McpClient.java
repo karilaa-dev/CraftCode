@@ -31,7 +31,7 @@ import java.util.function.Consumer;
 /** Blocking MCP operations. Call from a worker thread. Closing is safe from another thread. */
 public final class McpClient implements Closeable {
     private static final String PROTOCOL = "2025-11-25";
-    private static final String MOD_VERSION = "0.9.0";
+    private static final String MOD_VERSION = "0.10.0";
     private final HttpTransport wire;
     private final boolean interactive;
     private volatile String pendingPairingCode;
@@ -87,7 +87,7 @@ public final class McpClient implements Closeable {
         params.addProperty("protocolVersion", PROTOCOL);
         params.add("capabilities", new JsonObject());
         JsonObject client = new JsonObject();
-        client.addProperty("name", "t3mc");
+        client.addProperty("name", "t3-mc");
         client.addProperty("title", "T3 Code for Minecraft");
         client.addProperty("version", MOD_VERSION);
         params.add("clientInfo", client);
@@ -157,7 +157,7 @@ public final class McpClient implements Closeable {
         capabilities.add("extensions", extensions);
         meta.add("io.modelcontextprotocol/clientCapabilities", capabilities);
         JsonObject info = new JsonObject();
-        info.addProperty("name", "t3mc");
+        info.addProperty("name", "t3-mc");
         info.addProperty("version", MOD_VERSION);
         meta.add("io.modelcontextprotocol/clientInfo", info);
         eventParams.add("_meta", meta);

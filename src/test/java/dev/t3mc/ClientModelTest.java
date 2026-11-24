@@ -27,6 +27,13 @@ class ClientModelTest {
             client.applySettings(new SettingsUpdate(fixture.url(), "", NotificationMode.OFF));
             await(() -> client.snapshot().connection().state() == ConnectionState.CONNECTED);
             client.createThread("project");
+            await(() -> client.snapshot().drafting());
+            String draft = client.snapshot().selectedThreadId();
+            assertFalse(fixture.created);
+            assertFalse(client.sendMessage(draft, "  ").toCompletableFuture().join());
+            assertTrue(client.sendMessage(draft, "first prompt").toCompletableFuture().join());
+            assertEquals("first prompt", fixture.launch.get("message").getAsString());
+            assertFalse(fixture.launch.has("modelSelection"));
             await(() -> "one".equals(client.snapshot().selectedThreadId()));
             client.listModels("").toCompletableFuture().get(3, TimeUnit.SECONDS);
             assertEquals("inherited", client.snapshot().selectedThread().modelSelection().modelId());
@@ -63,6 +70,29 @@ class ClientModelTest {
         }
     }
 
+    @Test void abandonedDraftAndScratchModelChoiceStayLocalUntilSend() throws Exception {
+        try (var fixture = new ModelServer(); var client = new ClientController(dir.resolve("draft.json"))) {
+            client.applySettings(new SettingsUpdate(fixture.url(), "", NotificationMode.OFF));
+            await(() -> client.snapshot().connection().state() == ConnectionState.CONNECTED);
+            client.createThread("project");
+            await(() -> client.snapshot().drafting());
+            client.selectThread("two");
+            await(() -> "two".equals(client.snapshot().selectedThreadId()));
+            assertFalse(fixture.created);
+            client.createThread("");
+            await(() -> client.snapshot().drafting());
+            var id = client.snapshot().selectedThreadId();
+            var choice = new ModelSelection("second-provider", "typed-model", Map.of("fast", true));
+            assertTrue(client.configureModel(id, choice).toCompletableFuture().join());
+            assertEquals(choice, client.snapshot().selectedThread().modelSelection());
+            assertFalse(fixture.created);
+            assertTrue(client.sendMessage(id, "scratch prompt").toCompletableFuture().join());
+            assertTrue(fixture.launch.get("scratch").getAsBoolean());
+            assertFalse(fixture.launch.has("projectId"));
+            assertEquals("typed-model", fixture.launch.getAsJsonObject("modelSelection").get("model").getAsString());
+        }
+    }
+
     private static void await(BooleanSupplier predicate) throws InterruptedException {
         long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!predicate.getAsBoolean() && System.nanoTime() < end) Thread.sleep(10);
@@ -76,7 +106,8 @@ class ClientModelTest {
         final AtomicInteger sendCount = new AtomicInteger();
         final JsonObject inherited = obj("{\"instanceId\":\"first\",\"model\":\"inherited\",\"options\":[]}");
         JsonObject selection = inherited;
-        boolean created;
+        volatile boolean created;
+        volatile JsonObject launch;
 
         ModelServer() throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 4);
@@ -132,7 +163,7 @@ class ClientModelTest {
                     yield result;
                 }
                 case "t3_thread_launch" -> {
-                    if (args.has("modelSelection") || args.has("message")) throw new IOException("Expected idle inherited thread");
+                    launch = args;
                     created = true;
                     yield obj("{\"threadId\":\"one\"}");
                 }

@@ -9,6 +9,7 @@ import dev.t3mc.ClientController;
 import dev.t3mc.L10n;
 import dev.t3mc.ui.model.ConnectionProfileView;
 import dev.t3mc.ui.model.ConnectionState;
+import dev.t3mc.ui.model.EnvironmentDisplay;
 import dev.t3mc.ui.model.ConnectionsView;
 import dev.t3mc.ui.model.LinkedEnvironmentView;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -28,21 +29,23 @@ import java.util.Locale;
 final class ConnectionsScreen extends SpruceScreen {
     private static final int MAX_W = 380;
     private static final int HEAD = 38;   // title + destination line
-    private static final int FOOT = 46;   // hint line + footer buttons
+    private static final int FOOT = 69;   // hint line + footer buttons
     private static final int EMPTY_H = 40;
 
-    private final Screen workspace;
+    private final @Nullable Screen workspace;
     private final ClientController controller;
     private ConnectionsView view;
     private @Nullable ServerList list;
     private @Nullable FlatButton primary, forget, refresh;
+    private FlatButton visibility, icon, edit, disconnect;
+    private static final List<String> ICONS = List.of("", "★", "◆", "●", "▲", "■", "♥", "☀");
     private @Nullable GuiEventListener nextFocus;
     private @Nullable String cursorKey;
     private double listScroll;
     private String confirmRemove = "";
     private int x, w, top, bottom, listTop, listBottom;
 
-    ConnectionsScreen(Screen workspace, ClientController controller) {
+    ConnectionsScreen(@Nullable Screen workspace, ClientController controller) {
         super(Component.literal(L10n.tr("connections.title", "MCP servers")));
         this.workspace = workspace;
         this.controller = controller;
@@ -71,15 +74,20 @@ final class ConnectionsScreen extends SpruceScreen {
 
         w = Math.min(width - 16, MAX_W);
         x = (width - w) / 2;
-        int maxList = Math.max(ServerList.SERVER_H, height - 12 - HEAD - FOOT);
+        int maxList = Math.max(ServerList.SERVER_H, height - 62 - HEAD - FOOT);
         int listH = rows.isEmpty() ? EMPTY_H : Math.min(ServerList.contentHeight(rows), maxList);
         int panelH = HEAD + listH + FOOT;
-        top = Math.max(6, (height - panelH) / 2);
+        top = 56;
         bottom = top + panelH;
         listTop = top + HEAD;
         listBottom = listTop + listH;
         int left = x + 8, right = x + w - 8;
 
+        int half = (right - left - 4) / 2;
+        button(left, 30, half, L10n.tr("chat.workspace.servers", "Servers"), FlatButton.Kind.SELECTED, () -> {});
+        button(left + half + 4, 30, right - left - half - 4, L10n.tr("settings.other", "Other settings"),
+                FlatButton.Kind.NORMAL, () -> minecraft.gui.setScreen(new SettingsScreen(workspace, controller)));
+        visibility = icon = edit = disconnect = null;
         list = null;
         if (!rows.isEmpty()) {
             list = new ServerList(Position.of(x + 4, listTop), w - 8, listH, new ServerList.Actions() {
@@ -146,6 +154,16 @@ final class ConnectionsScreen extends SpruceScreen {
             if (row == null) onClose();
             else openRow(row);
         });
+        int optionY = footY - 23;
+        int quarter = (right - left - 12) / 4;
+        visibility = button(left, optionY, quarter, "", FlatButton.Kind.NORMAL, () -> changeDisplay(false));
+        icon = button(left + quarter + 4, optionY, quarter, "", FlatButton.Kind.NORMAL, () -> changeDisplay(true));
+        edit = button(left + 2 * (quarter + 4), optionY, quarter, L10n.tr("settings.edit", "Edit server"), FlatButton.Kind.NORMAL, () -> {
+            if (list.cursorRow() instanceof ServerList.Server s)
+                minecraft.gui.setScreen(new SettingsScreen(this, controller, false, s.profile()));
+        });
+        disconnect = button(left + 3 * (quarter + 4), optionY, right - left - 3 * (quarter + 4),
+                L10n.tr("settings.disconnect", "Disconnect"), FlatButton.Kind.NORMAL, () -> controller.disconnect());
         syncCursor();
         if (list != null) this.setFocused(list);
     }
@@ -173,6 +191,19 @@ final class ConnectionsScreen extends SpruceScreen {
         var row = list.cursorRow();
         cursorKey = row == null ? null : row.key();
         listScroll = list.scroll();
+        if (visibility != null) {
+            var owner = list.ownerOf(row);
+            boolean selectable = row instanceof ServerList.Server || row instanceof ServerList.Machine;
+            var display = owner == null ? EnvironmentDisplay.DEFAULT : owner.display(environment(row));
+            visibility.setLabel(display.hidden() ? L10n.tr("settings.hidden", "Hidden") : L10n.tr("settings.shown", "Visible"));
+            visibility.setKind(display.hidden() ? FlatButton.Kind.NORMAL : FlatButton.Kind.SELECTED);
+            visibility.setActive(selectable);
+            icon.setLabel(L10n.tr("settings.icon", "Icon: %s", display.icon().isEmpty() ? "–" : display.icon()));
+            icon.setActive(selectable);
+            edit.setActive(row instanceof ServerList.Server);
+            disconnect.setActive(row instanceof ServerList.Server s && s.profile().id().equals(view.activeProfileId())
+                    && s.profile().state() != ConnectionState.DISCONNECTED);
+        }
         if (refresh != null) {
             var owner = list.ownerOf(row);
             boolean busy = owner != null && owner.refreshingLinks();
@@ -229,6 +260,22 @@ final class ConnectionsScreen extends SpruceScreen {
         }
     }
 
+    private static String environment(ServerList.Row row) {
+        return row instanceof ServerList.Machine m ? m.link().id() : "";
+    }
+
+    private void changeDisplay(boolean cycleIcon) {
+        var row = list.cursorRow();
+        var owner = list.ownerOf(row);
+        if (owner == null) return;
+        String environment = environment(row);
+        var display = owner.display(environment);
+        var next = cycleIcon
+                ? new EnvironmentDisplay(display.hidden(), ICONS.get((ICONS.indexOf(display.icon()) + 1) % ICONS.size()))
+                : new EnvironmentDisplay(!display.hidden(), display.icon());
+        controller.setDisplay(owner.id(), environment, next);
+    }
+
     private void openRow(ServerList.Row row) {
         if (!confirmRemove.isEmpty()) return;
         switch (row) {
@@ -264,7 +311,7 @@ final class ConnectionsScreen extends SpruceScreen {
     }
 
     private void addServer() {
-        minecraft.gui.setScreen(new SettingsScreen(this, controller, true));
+        minecraft.gui.setScreen(new SettingsScreen(this, controller, true, null));
     }
 
     private void rebuildFromButton() {
@@ -369,7 +416,7 @@ final class ConnectionsScreen extends SpruceScreen {
         }
     }
 
-    @Override public boolean isPauseScreen() { return workspace.isPauseScreen(); }
+    @Override public boolean isPauseScreen() { return workspace != null && workspace.isPauseScreen(); }
     @Override public void onClose() { minecraft.gui.setScreen(workspace); }
 
     @Override
@@ -390,6 +437,9 @@ final class ConnectionsScreen extends SpruceScreen {
     @Override
     public void extractRenderState(SpruceGuiGraphics g, int mx, int my, float delta) {
         int left = x + 8, right = x + w - 8;
+        var heading = Component.literal(L10n.tr("settings.title", "T3 Code Settings")).withStyle(style -> style.withBold(true));
+        Theme.plate(g, left, 10, font.width(heading), font.lineHeight, Theme.TEXT_PLATE);
+        g.text(font, heading, left, 10, Theme.TEXT, false);
         g.text(font, this.getTitle().copy().withStyle(s -> s.withBold(true)), left, top + 9, Theme.TEXT, false);
         drawDestination(g, left, right, top + 22);
 
@@ -401,7 +451,7 @@ final class ConnectionsScreen extends SpruceScreen {
                     left, listTop + 21, Theme.MUTED, false);
         }
 
-        int hintY = bottom - 8 - 19 - 13;
+        int hintY = listBottom + 6;
         String hint;
         int hintColor = Theme.FAINT;
         if (!confirmRemove.isEmpty()) {

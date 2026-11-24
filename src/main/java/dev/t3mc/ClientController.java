@@ -22,6 +22,7 @@ public final class ClientController implements AutoCloseable {
     private ClientConfig config;
     private record Target(String profileId, String environmentId) {}
     private final Map<Target,Session> sessions = new LinkedHashMap<>();
+    private boolean restored;
     private Session session; // Foreground workspace.
 
     private volatile long connectionGeneration;
@@ -37,7 +38,7 @@ public final class ClientController implements AutoCloseable {
         try { config = ClientConfig.load(file); }
         catch (IOException e) { config = ClientConfig.defaults(); error = e.getMessage(); }
         snapshot = new WorkspaceSnapshot(0, new ConnectionStatus(error.isEmpty() ? ConnectionState.DISCONNECTED : ConnectionState.ERROR, error),
-                List.of(), null, null, config.view(connections()));
+                List.of(), null, null, config.view(connections()), List.of(), false);
     }
 
     public WorkspaceSnapshot snapshot() { return snapshot; }
@@ -109,12 +110,55 @@ public final class ClientController implements AutoCloseable {
                     root == null ? ConnectionState.DISCONNECTED : root.status.state(),
                     p.includeLinked(), root != null && root.capabilities.contains("t3_environment_links"),
                     root != null && p.includeLinked() ? root.links : List.of(), root == null ? "" : root.linkError,
-                    root != null && p.includeLinked() && root.discoveryQueued, p.linksExpanded());
+                    root != null && p.includeLinked() && root.discoveryQueued, p.linksExpanded(), p.displays());
         }).toList();
-        return new ConnectionsView(profiles, config.activeProfileId(), session == null ? "" : session.environmentId, connectionGeneration);
+        int online = (int) sessions.values().stream().filter(s -> s.status.state() == ConnectionState.CONNECTED).count();
+        int total = profiles.size() + profiles.stream().mapToInt(p -> p.links().size()).sum();
+        return new ConnectionsView(profiles, config.activeProfileId(), session == null ? "" : session.environmentId, connectionGeneration, online, total);
     }
 
     private Session root(String profileId) { return sessions.get(new Target(profileId, "")); }
+
+    public synchronized boolean setDisplay(String profile, String environment, EnvironmentDisplay display) {
+        return config.profile(profile) != null && savePreference(config.withDisplay(profile, environment, display));
+    }
+
+    public synchronized boolean setNotifications(NotificationMode mode) {
+        return savePreference(config.withNotifications(mode));
+    }
+
+    /** Restore saved sessions without opening a login prompt for each server. */
+    public synchronized void restoreWorkspaces() {
+        if (restored) return;
+        restored = true;
+        for (var profile : config.profiles()) {
+            if (root(profile.endpoint()) != null) continue;
+            Session target = new Session(config.select(profile.endpoint()), "", profile.name());
+            sessions.put(target.key, target);
+            if (profile.endpoint().equals(config.activeProfileId())) activate(target);
+            target.worker.execute(() -> target.connect(null));
+        }
+    }
+
+    /** Resolve a row against current sessions before switching or sending navigation to its owner. */
+    private boolean activateVisible(WorkspaceEnvironment source) {
+        var target = sessions.get(new Target(source.profileId(), source.environmentId()));
+        if (target == null || target.status.state() != ConnectionState.CONNECTED
+                || config.profile(source.profileId()).display(source.environmentId()).hidden()) return false;
+        if (session != target) {
+            if (!config.activeProfileId().equals(source.profileId()) && !persistConfig(config.select(source.profileId()))) return false;
+            activate(target);
+        }
+        return true;
+    }
+
+    public synchronized void openThread(WorkspaceEnvironment source, String id) {
+        if (activateVisible(source)) selectThread(id);
+    }
+
+    public synchronized void startDraft(WorkspaceEnvironment source, String projectId) {
+        if (activateVisible(source)) createThread(projectId);
+    }
 
     public void applySettings(SettingsUpdate update) { saveProfile("", update); }
 
@@ -328,9 +372,10 @@ public final class ClientController implements AutoCloseable {
                     result.complete(false);
                     return;
                 }
-                if (!target.capabilities.contains("t3_thread_configure"))
+                boolean local = target.draftKey != null && target.launchedId == null;
+                if (!local && !target.capabilities.contains("t3_thread_configure"))
                     throw new IOException(tr("net.no_model_settings", "This T3 server does not expose model configuration."));
-                target.api.configure(threadId, selection);
+                if (!local) target.api.configure(target.launchedId == null ? threadId : target.launchedId, selection);
                 target.detail = target.detail.withModelSelection(selection);
                 target.show();
                 result.complete(true);
@@ -385,7 +430,8 @@ public final class ClientController implements AutoCloseable {
                     result.complete(false);
                     return;
                 }
-                target.send(threadId, text, attachments);
+                if (target.draftKey != null) target.launchDraft(text, attachments);
+                else target.send(threadId, text, attachments);
                 result.complete(true);
                 target.refresh();
             } catch (Exception e) {
@@ -417,9 +463,26 @@ public final class ClientController implements AutoCloseable {
     }
 
     private void publish(ConnectionStatus connection, List<ProjectView> projects, ThreadDetail detail) {
+        boolean hidden = session != null && config.profile(session.profileId) != null
+                && config.profile(session.profileId).display(session.environmentId).hidden();
+        if (hidden) detail = null;
         String id = detail == null ? null : detail.id();
-        var next = new WorkspaceSnapshot(snapshot.version(), connection, projects, id, detail, config.view(connections()));
-        if (!snapshot.equals(next)) snapshot = new WorkspaceSnapshot(next.version() + 1, connection, projects, id, detail, next.settings());
+        var environments = new ArrayList<WorkspaceEnvironment>();
+        for (var s : sessions.values()) {
+            var profile = config.profile(s.profileId);
+            if (profile == null) continue;
+            var display = profile.display(s.environmentId);
+            if (display.hidden()) continue;
+            var primary = root(s.profileId);
+            boolean writable = s.status.state() == ConnectionState.CONNECTED && (s.environmentId.isEmpty()
+                    || primary != null && primary.links.stream().anyMatch(l -> l.id().equals(s.environmentId) && l.reachable() && !l.readOnly()));
+            var name = s.environmentId.isEmpty() ? profile.name() : profile.name() + " / " + s.label;
+            environments.add(new WorkspaceEnvironment(s.profileId, s.environmentId, name, display.icon(), writable, s.visibleSidebar));
+        }
+        boolean drafting = detail != null && session.visibleDraft;
+        var next = new WorkspaceSnapshot(snapshot.version(), connection, projects, id, detail, config.view(connections()), environments, drafting);
+        if (!snapshot.equals(next)) snapshot = new WorkspaceSnapshot(next.version() + 1, connection, projects, id, detail,
+                next.settings(), environments, drafting);
     }
 
     private final class Session {
@@ -450,6 +513,8 @@ public final class ClientController implements AutoCloseable {
         final Map<String,Map<String,Object>> partialAnswers = new HashMap<>();
         List<T3Api.Request> requests = List.of();
         String selected;
+        String draftKey, launchedId;
+        boolean visibleDraft;
         ThreadDetail detail;
         long projectRefresh;
         String pollError = "";
@@ -493,7 +558,16 @@ public final class ClientController implements AutoCloseable {
                 if (error.isEmpty()) {
                     links = found;
                     Set<String> reachable = new HashSet<>();
-                    for (var link : links) if (link.reachable()) reachable.add(link.id());
+                    for (var link : links) {
+                        if (!link.reachable()) continue;
+                        reachable.add(link.id());
+                        var peerKey = new Target(profileId, link.id());
+                        if (!sessions.containsKey(peerKey)) {
+                            var peer = new Session(config.select(profileId), link.id(), link.label());
+                            sessions.put(peerKey, peer);
+                            peer.worker.execute(() -> peer.connect(""));
+                        }
+                    }
                     for (Session peer : List.copyOf(sessions.values())) {
                         if (!profileId.equals(peer.profileId) || peer.environmentId.isEmpty() || reachable.contains(peer.environmentId)) continue;
                         stop(peer);
@@ -510,7 +584,7 @@ public final class ClientController implements AutoCloseable {
         void connect(String connectionCode) {
             try {
                 if (settings.httpUrl().isBlank()) throw new IOException(tr("net.enter_url", "Enter your T3 Code URL in Settings."));
-                wire = environmentId.isEmpty()
+                wire = environmentId.isEmpty() && connectionCode != null
                         ? McpClient.connect(profileId, settings.token(), connectionCode, this::rememberGrant)
                         : McpClient.forLinkedEnvironment(profileId, settings.token());
                 if (worker.isShutdown()) { closeWire(); return; }
@@ -557,6 +631,7 @@ public final class ClientController implements AutoCloseable {
                 status = new ConnectionStatus(polling ? ConnectionState.ERROR : ConnectionState.CONNECTED, reason);
                 visibleSidebar = sidebar;
                 visibleDetail = detail;
+                visibleDraft = draftKey != null;
                 publishActive();
                 if (!polling || !reason.equals(pollError)) notice(tr("notice.t3_error", "T3 Code error"), reason);
             }
@@ -581,6 +656,7 @@ public final class ClientController implements AutoCloseable {
                 status = new ConnectionStatus(ConnectionState.CONNECTED, "");
                 visibleSidebar = sidebar;
                 visibleDetail = detail;
+                visibleDraft = draftKey != null;
                 publishActive();
             }
         }
@@ -607,11 +683,11 @@ public final class ClientController implements AutoCloseable {
                         thread.updatedAtMillis(), thread.organization(hasPendingInput)));
             }
             sidebar = projects.stream().map(p -> new ProjectView(p.id(), p.title(), p.path(), grouped.getOrDefault(p.id(), List.of()))).toList();
-            if (selected != null && selectedInfo == null) {
+            if (draftKey == null && selected != null && selectedInfo == null) {
                 selected = null;
                 detail = null;
                 requests = List.of();
-            } else if (selected != null && (!Objects.equals(lastDetail, selectedInfo) || detail == null
+            } else if (draftKey == null && selected != null && (!Objects.equals(lastDetail, selectedInfo) || detail == null
                     || detail.status() == ThreadStatus.RUNNING || detail.status() == ThreadStatus.WAITING_FOR_INPUT
                     || monitor.hasQuestions(selected) || !requests.isEmpty())) {
                 loadDetail();
@@ -625,16 +701,36 @@ public final class ClientController implements AutoCloseable {
             if (Objects.equals(selected, id)) return;
             var conversation = api.read(id);
             updateDetail(conversation);
+            draftKey = launchedId = null;
             selected = id;
             lastDetail = conversation.thread();
             show();
         }
 
-        void create(String projectId) throws IOException {
-            // T3 accepts an empty thread, inheriting its project's provider and permissions.
-            String id = api.launch(projectId, tr("net.new_thread", "New thread"), "", UUID.randomUUID().toString());
-            selected = id;
-            refresh();
+        void create(String projectId) {
+            if (!projectId.isEmpty() && projects.stream().noneMatch(p -> p.id().equals(projectId))) return;
+            draftKey = UUID.randomUUID().toString();
+            selected = "draft:" + draftKey;
+            launchedId = null;
+            detail = new ThreadDetail(selected, projectId, tr("net.new_thread", "New thread"), ThreadStatus.IDLE, List.of(), List.of());
+            requests = List.of();
+            lastDetail = null;
+            show();
+        }
+
+        void launchDraft(String text, List<LocalImage> images) throws IOException {
+            // The image send receipt and preview cache use a real thread id. Keep it if upload fails so retry reuses the same thread.
+            boolean needsSend = launchedId != null || !images.isEmpty();
+            if (launchedId == null) {
+                String title = text.lines().findFirst().orElse(detail.title());
+                title = title.substring(0, title.offsetByCodePoints(0, Math.min(72, title.codePointCount(0, title.length()))));
+                launchedId = api.launch(detail.projectId(), title, images.isEmpty() ? text : "", draftKey, detail.modelSelection());
+            }
+            if (needsSend) send(launchedId, text, images);
+            selected = launchedId;
+            draftKey = launchedId = null;
+            detail = new ThreadDetail(selected, detail.projectId(), detail.title(), ThreadStatus.IDLE, List.of(), List.of(), detail.modelSelection());
+            show();
         }
 
         void send(String id, String text, List<LocalImage> images) throws IOException {

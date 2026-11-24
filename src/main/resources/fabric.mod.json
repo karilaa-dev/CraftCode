@@ -1,16 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "t3mc",
+  "id": "t3-mc",
+  "provides": ["t3mc"],
   "version": "${version}",
-  "name": "T3 Code for Minecraft",
+  "name": "t3-mc",
+  "authors": ["karilaa-dev"],
   "license": "MIT",
   "contact": {
-    "homepage": "https://github.com/karilaa-dev/t3-mc",
+    "homepage": "https://modrinth.com/mod/t3-mc",
     "sources": "https://github.com/karilaa-dev/t3-mc",
     "issues": "https://github.com/karilaa-dev/t3-mc/issues"
   },
   "icon": "assets/t3mc/icon.png",
-  "description": "An unofficial client for chatting with T3 Code agents and receiving updates in Minecraft.",
+  "description": "An unofficial client for chatting with T3 Code agents and receiving updates in Minecraft. By karilaa-dev.\nModrinth: https://modrinth.com/mod/t3-mc\nGitHub: https://github.com/karilaa-dev/t3-mc",
   "environment": "client",
   "entrypoints": {
     "client": ["dev.t3mc.T3McClient"]

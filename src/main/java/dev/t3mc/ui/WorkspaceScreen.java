@@ -48,7 +48,6 @@ public class WorkspaceScreen extends SpruceScreen {
     private final ClientController controller;
     private final @Nullable Screen parent;
     private WorkspaceSnapshot snapshot;
-    private String serverLabel = "T3 Code";
     private long renderedVersion = Long.MIN_VALUE;
     private String layoutKey = "";
 
@@ -63,6 +62,13 @@ public class WorkspaceScreen extends SpruceScreen {
     private int settledLimit = SidebarList.SETTLED_PAGE;
     /** Project picker for "+ New thread" is open in place of the thread list. */
     private boolean pickingProject;
+    private boolean filtering;
+    private String query = "";
+    private String projectQuery = "";
+    private InputField search;
+    private @Nullable WorkspaceProject.Key projectFilter;
+    private FlatButton filterButton;
+    private int composerBottom;
     /** Request ids answered recently, to swallow double clicks while the answer is in flight. */
     private final Map<String, Long> answeredAt = new HashMap<>();
     private double sidebarScroll;
@@ -133,6 +139,7 @@ public class WorkspaceScreen extends SpruceScreen {
         super(Component.literal("T3 Code"));
         this.parent = parent;
         this.controller = Objects.requireNonNull(controller, "controller");
+        controller.restoreWorkspaces();
         this.snapshot = controller.snapshot();
         this.models = new ModelPickerState(controller);
         var servers = this.snapshot.settings().connections();
@@ -160,13 +167,33 @@ public class WorkspaceScreen extends SpruceScreen {
         // Sidebar
         Theme.sync(snap.settings());
         Theme.setTransparency(snap.settings().transparency());
-        this.newThreadButton = this.addRenderableWidget(new FlatButton(Position.of(8, 34), sw - 16, 18, L10n.tr("chat.thread.new", "+  New thread"),
-                FlatButton.Kind.PRIMARY, b -> this.togglePicker()));
-        int listH = this.height - 58 - 30;
-        this.sidebar = this.addRenderableWidget(new SidebarList(Position.of(0, 58), sw, listH, new SidebarList.Actions() {
+        String searchLabel = L10n.tr("sidebar.search", "Search");
+        this.search = this.addRenderableWidget(new InputField(Position.of(6, 21), sw - 12, searchLabel, searchLabel));
+        search.setText(filtering || pickingProject ? projectQuery : query);
+        search.setChangedListener(text -> {
+            if (filtering || pickingProject) projectQuery = text;
+            else query = text;
+            sidebar.setScroll(0);
+            picker.setScroll(0);
+            refreshSidebar();
+        });
+        int filterW = (sw - 16) / 2;
+        this.filterButton = this.addRenderableWidget(new FlatButton(Position.of(6, 42), filterW, 17,
+                L10n.tr("sidebar.filter", "Filter projects"), b -> {
+                    filtering = !filtering;
+                    pickingProject = false;
+                    projectQuery = "";
+                    search.setText(filtering ? projectQuery : query);
+                    picker.setScroll(0);
+                    refreshSidebar();
+                }));
+        this.newThreadButton = this.addRenderableWidget(new FlatButton(Position.of(10 + filterW, 42), sw - 16 - filterW, 17,
+                L10n.tr("chat.thread.new", "+  New thread"), FlatButton.Kind.PRIMARY, b -> this.togglePicker()));
+        int listH = this.height - 63 - 30;
+        this.sidebar = this.addRenderableWidget(new SidebarList(Position.of(0, 63), sw, listH, new SidebarList.Actions() {
             @Override
-            public void selectThread(String threadId) {
-                controller.onConnection(snapshot.settings().connections().generation(), () -> controller.selectThread(threadId));
+            public void selectThread(WorkspaceProject project, String threadId) {
+                controller.openThread(project.source(), threadId);
             }
 
             @Override
@@ -183,16 +210,9 @@ public class WorkspaceScreen extends SpruceScreen {
             }
         }));
         this.sidebar.setScroll(this.sidebarScroll);
-        this.picker = this.addRenderableWidget(new ProjectPicker(Position.of(0, 58), sw, listH, this::newThread));
-        String serversLabel = L10n.tr("chat.workspace.servers", "Servers");
-        String settingsLabel = L10n.tr("chat.workspace.settings", "Settings");
-        // Split the footer by label width so longer translations stay readable in the narrowest sidebar.
-        int serversText = this.font.width(serversLabel) + 8, settingsText = this.font.width(settingsLabel) + 8;
-        int footerWidth = Math.clamp((long) (sw - 20) * serversText / (serversText + settingsText), 30, sw - 50);
-        this.addRenderableWidget(new FlatButton(Position.of(8, this.height - 24), footerWidth, 18, serversLabel,
-                b -> this.minecraft.gui.setScreen(new ConnectionsScreen(this, this.controller))));
-        this.addRenderableWidget(new FlatButton(Position.of(12 + footerWidth, this.height - 24), sw - 20 - footerWidth, 18, settingsLabel,
-                b -> this.minecraft.gui.setScreen(new SettingsScreen(this, this.controller))));
+        this.picker = this.addRenderableWidget(new ProjectPicker(Position.of(0, 63), sw, listH, this::pickProject));
+        this.addRenderableWidget(new FlatButton(Position.of(6, this.height - 24), sw - 12, 18,
+                L10n.tr("chat.workspace.settings", "Settings"), b -> this.minecraft.gui.setScreen(new ConnectionsScreen(this, controller))));
 
         // Header buttons (visibility toggled in refresh)
         String stopLabel = L10n.tr("chat.workspace.stop", "Stop");
@@ -209,16 +229,19 @@ public class WorkspaceScreen extends SpruceScreen {
                 b -> {
                     // A saved T3 URL reconnects (reusing its login or signing in again); without one, open Settings.
                     if (!this.controller.snapshot().settings().httpUrl().isBlank()) this.controller.reconnect();
-                    else this.minecraft.gui.setScreen(new SettingsScreen(this, this.controller));
+                    else this.minecraft.gui.setScreen(new ConnectionsScreen(this, this.controller));
                 }));
 
         // Composer
-        int sendRowY = this.height - 8 - SEND_ROW;
+        int inset = 5;
+        int sendRowY = this.height - 12 - inset - SEND_ROW;
+        if (snap.drafting()) sendRowY = Math.min(sendRowY, (this.height + HEADER + COMPOSER_H) / 2 + 16);
+        composerBottom = sendRowY + SEND_ROW + inset;
         String threadId = detail == null ? null : detail.id();
         boolean hasImages = !this.images(threadId).isEmpty();
-        int stripY = sendRowY - 4 - AttachmentStrip.HEIGHT;
-        int composerY = (hasImages ? stripY - ATTACH_GAP : sendRowY - 4) - COMPOSER_H;
-        this.composer = this.addRenderableWidget(new ComposerArea(Position.of(mainX + pad, composerY), mainW - pad * 2, COMPOSER_H,
+        int stripY = sendRowY - 6 - AttachmentStrip.HEIGHT;
+        int composerY = (hasImages ? stripY - ATTACH_GAP : sendRowY - 6) - COMPOSER_H;
+        this.composer = this.addRenderableWidget(new ComposerArea(Position.of(mainX + pad + inset, composerY + inset), mainW - (pad + inset) * 2, COMPOSER_H - inset * 2,
                 L10n.tr("chat.composer.placeholder", "Ask anything…"), this::send));
         this.composer.setText(threadId == null ? "" : this.composerDrafts.getOrDefault(threadId, ""));
         this.composer.setCursorToEnd();
@@ -227,16 +250,16 @@ public class WorkspaceScreen extends SpruceScreen {
             this.attachmentStrip = this.addRenderableWidget(new AttachmentStrip(Position.of(mainX + pad, stripY), mainW - pad * 2,
                     this.previews, this::removeImage));
         }
-        int sendW = Math.max(60, Math.max(this.font.width(sendLabel()), this.font.width(sendingLabel())) + 10);
-        this.sendButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - sendW, sendRowY), sendW, SEND_ROW,
+        int sendW = Math.max(mainW < 240 ? 32 : 60, Math.min(mainW / 4, Math.max(this.font.width(sendLabel()), this.font.width(sendingLabel())) + 10));
+        this.sendButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - inset - sendW, sendRowY), sendW, SEND_ROW,
                 sendLabel(), FlatButton.Kind.PRIMARY, b -> this.send()));
         boolean roomy = mainW - pad * 2 >= 240;
         String attachLabel = roomy ? L10n.tr("chat.composer.attach", "+ Image") : L10n.tr("chat.composer.attach_short", "Image");
         int attachW = Math.max(roomy ? 48 : 36, this.font.width(attachLabel) + 10);
-        this.attachButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - sendW - 4 - attachW, sendRowY),
+        this.attachButton = this.addRenderableWidget(new FlatButton(Position.of(this.width - pad - inset - sendW - 4 - attachW, sendRowY),
                 attachW, SEND_ROW, attachLabel, b -> this.chooseImages()));
-        int chipMax = Math.max(40, Math.min(240, (mainW - pad * 2 - 64) * 3 / 5));
-        this.modelButton = this.addRenderableWidget(new ModelChip(Position.of(mainX + pad, sendRowY), chipMax, SEND_ROW,
+        int chipMax = Math.max(16, Math.min(240, mainW - (pad + inset) * 2 - sendW - attachW - 10));
+        this.modelButton = this.addRenderableWidget(new ModelChip(Position.of(mainX + pad + inset, sendRowY), chipMax, SEND_ROW,
                 b -> this.openModelPicker()));
 
         // Pending question
@@ -288,7 +311,7 @@ public class WorkspaceScreen extends SpruceScreen {
         boolean fromPicker = this.returningFromPicker && this.minecraft.gui.screen() == this;
         if (fromPicker) this.returningFromPicker = false;
         if (this.answerField != null && this.answerHadFocus) this.setFocused(this.answerField);
-        else if (this.composer.isActive() && (this.composerHadFocus || fromPicker)) this.setFocused(this.composer);
+        else if (this.composer.isActive() && (this.composerHadFocus || fromPicker || snap.drafting() && !sameThread)) this.setFocused(this.composer);
     }
 
     /** Things that need widgets to be recreated when they change. */
@@ -360,15 +383,18 @@ public class WorkspaceScreen extends SpruceScreen {
 
     /** Pushes snapshot data into the existing widgets. */
     private void refresh(WorkspaceSnapshot snap, boolean forceBottom) {
-        this.serverLabel = ConnectionsScreen.activeName(snap.settings().connections());
         this.renderedVersion = snap.version();
         boolean connected = snap.connection().state() == ConnectionState.CONNECTED;
         var detail = snap.selectedThread();
 
         boolean writable = connected && !snap.settings().connections().readOnly();
-        if (!writable || snap.projects().isEmpty()) this.pickingProject = false;
+        boolean canStart = snap.environments().stream().anyMatch(e -> e.writable());
+        if (!canStart && pickingProject) {
+            pickingProject = false;
+            search.setText(query);
+        }
         this.refreshSidebar();
-        this.newThreadButton.setActive(writable && !snap.projects().isEmpty());
+        this.newThreadButton.setActive(canStart);
 
         if (!connected) {
             String message = snap.connection().message();
@@ -383,6 +409,8 @@ public class WorkspaceScreen extends SpruceScreen {
             String select = L10n.tr("chat.empty.select_thread", "Select a thread");
             if (writable) this.transcript.setEmpty(select, L10n.tr("chat.empty.select_thread_hint", "or start one in any project with “+ New thread”."));
             else this.transcript.setEmpty(select, L10n.tr("chat.empty.read_only", "This environment has read-only access."));
+        } else if (snap.drafting()) {
+            this.transcript.setEmpty();
         } else {
             this.transcript.setConversation(detail.id(), detail.messages(), detail.status() == ThreadStatus.RUNNING, forceBottom);
         }
@@ -517,53 +545,69 @@ public class WorkspaceScreen extends SpruceScreen {
             case CONNECTING -> L10n.tr("chat.sidebar.loading", "Loading threads…");
             default -> L10n.tr("chat.sidebar.disconnected", "Connect to see your threads.");
         };
-        this.sidebar.setData(snap.projects(), snap.selectedThreadId(), this.settledExpanded, this.settledLimit, empty);
-        var suggested = this.defaultProject(null);
-        this.picker.setProjects(snap.projects(), suggested == null ? null : suggested.id());
-        this.sidebar.setVisible(!this.pickingProject);
-        this.picker.setVisible(this.pickingProject);
-        this.newThreadButton.setKind(this.pickingProject ? FlatButton.Kind.NORMAL : FlatButton.Kind.PRIMARY);
-        this.newThreadButton.setLabel(this.pickingProject ? L10n.tr("chat.picker.cancel", "Cancel") : L10n.tr("chat.thread.new", "+  New thread"));
+        var projects = new ArrayList<WorkspaceProject>();
+        for (var source : snap.environments()) {
+            for (var project : source.projects()) projects.add(new WorkspaceProject(source, project));
+        }
+        if (projectFilter != null && projects.stream().noneMatch(p -> p.key().equals(projectFilter))) projectFilter = null;
+        var filtered = projects.stream().filter(p -> projectFilter == null || projectFilter.equals(p.key())).toList();
+        boolean searching = !query.isBlank();
+        this.sidebar.setData(filtered, snap.settings().connections(), query, snap.selectedThreadId(),
+                settledExpanded || searching, settledLimit, searching || projectFilter != null
+                        ? L10n.tr("sidebar.no_matches", "No matching threads") : empty);
+        if (pickingProject) {
+            for (var source : snap.environments()) {
+                if (source.writable()) projects.add(new WorkspaceProject(source,
+                        new ProjectView("", L10n.tr("chat.draft.scratch", "No project"), "", List.of())));
+            }
+        }
+        var choices = projects.stream().filter(p -> filtering || p.source().writable())
+                .filter(p -> SidebarList.matches(p.name(), projectQuery) || SidebarList.matches(p.source().name(), projectQuery)).toList();
+        this.picker.setProjects(choices, projectFilter, filtering);
+        this.sidebar.setVisible(!pickingProject && !filtering);
+        this.picker.setVisible(pickingProject || filtering);
+        filterButton.setLabel(projectFilter == null ? L10n.tr("sidebar.filter_short", "Filter") : filtered.getFirst().name());
+        filterButton.setKind(filtering || projectFilter != null ? FlatButton.Kind.SELECTED : FlatButton.Kind.NORMAL);
+        this.newThreadButton.setLabel(pickingProject ? L10n.tr("chat.picker.cancel", "Cancel") : L10n.tr("chat.thread.new", "+  New thread"));
     }
 
     private void togglePicker() {
-        this.pickingProject = !this.pickingProject && this.snapshot.connection().state() == ConnectionState.CONNECTED;
-        if (this.pickingProject) this.picker.setScroll(0);
-        this.refreshSidebar();
+        filtering = false;
+        pickingProject = !pickingProject;
+        projectQuery = "";
+        search.setText(pickingProject ? projectQuery : query);
+        if (pickingProject) {
+            picker.setScroll(0);
+            if (projectFilter != null) {
+                for (var source : snapshot.environments()) for (var project : source.projects()) {
+                    var choice = new WorkspaceProject(source, project);
+                    if (source.writable() && projectFilter.equals(choice.key())) {
+                        pickProject(choice);
+                        return;
+                    }
+                }
+            }
+        }
+        refreshSidebar();
     }
 
-    // ---------------------------------------------------------------- actions
-
-    private @Nullable ProjectView defaultProject(@Nullable String preferred) {
-        var snap = this.snapshot;
-        if (preferred != null) {
-            var project = snap.project(preferred);
-            if (project != null) return project;
+    private void pickProject(@Nullable WorkspaceProject choice) {
+        if (filtering) projectFilter = choice == null ? null : choice.key();
+        else if (choice != null) {
+            composerHadFocus = true;
+            controller.startDraft(choice.source(), choice.project().id());
         }
-        var detail = snap.selectedThread();
-        if (detail != null) {
-            var project = snap.project(detail.projectId());
-            if (project != null) return project;
-        }
-        return snap.projects().isEmpty() ? null : snap.projects().getFirst();
-    }
-
-    /** Creates a thread in the explicitly picked project. */
-    private void newThread(String projectId) {
-        this.pickingProject = false;
-        this.refreshSidebar();
-        if (this.snapshot.connection().state() != ConnectionState.CONNECTED) return;
-        var project = this.snapshot.project(projectId);
-        if (project == null) return;
-        this.sidebar.setScroll(0);
-        this.composerHadFocus = true;
-        this.controller.onConnection(this.snapshot.settings().connections().generation(), () -> this.controller.createThread(project.id()));
+        pickingProject = filtering = false;
+        search.setText(query);
+        sidebar.setScroll(0);
+        refreshSidebar();
     }
 
     @Override
     public void onClose() {
-        if (this.pickingProject) { // Esc closes the project picker first
-            this.pickingProject = false;
+        if (this.pickingProject || filtering) { // Esc closes the project picker first
+            this.pickingProject = filtering = false;
+            search.setText(query);
             this.refreshSidebar();
             return;
         }
@@ -922,23 +966,18 @@ public class WorkspaceScreen extends SpruceScreen {
         var snap = this.snapshot;
         int sw = this.sidebarWidth;
 
-        // Sidebar header: brand + connection state
-        var brand = Component.literal(Theme.ellipsize(font, this.serverLabel, sw - 18)).withStyle(s -> s.withBold(true));
         var connection = snap.connection();
-        boolean busy = connection.state() == ConnectionState.CONNECTING;
-        String status = Theme.connectionLabel(connection.state());
-        if (connection.state() == ConnectionState.CONNECTED && snap.settings().connections().readOnly()) status = L10n.tr("chat.workspace.connected_read_only", "Connected · read-only");
-        if (!connection.message().isBlank() && connection.state() != ConnectionState.CONNECTING) {
-            status = connection.state() == ConnectionState.CONNECTED ? connection.message() : status;
-        }
-        int statusColor = connection.state() == ConnectionState.CONNECTED && !connection.message().isBlank() ? Theme.AMBER : Theme.MUTED;
-        String statusText = Theme.ellipsize(font, status, sw - 28);
-        Theme.fillPlate(graphics, 0, 0, sw, HEADER, Theme.SIDEBAR_SHEET);
+        var servers = snap.settings().connections();
+        int online = servers.online(), total = servers.total();
+        var state = online > 0 ? ConnectionState.CONNECTED : connection.state();
+        boolean partial = online < total;
+        String status = Theme.connectionLabel(state) + (partial ? "  " + online + "/" + total : "");
+        Theme.fillPlate(graphics, 0, 0, sw, 20, Theme.SIDEBAR_SHEET);
         Theme.fillPlate(graphics, sw + 1, 0, this.width, HEADER, Theme.SHEET);
-        graphics.text(font, brand, 10, 9, Theme.TEXT, false);
-        Theme.dot(graphics, 10, 22, Theme.connectionColor(connection.state()), busy);
-        graphics.text(font, statusText, 18, 20, statusColor, false);
-        if (mouseX < sw && mouseY >= 18 && mouseY < 30 && !connection.message().isBlank()) {
+        Theme.dot(graphics, 8, 9, partial && online > 0 ? Theme.AMBER : Theme.connectionColor(state),
+                state == ConnectionState.CONNECTING);
+        graphics.text(font, Theme.ellipsize(font, status, sw - 24), 16, 7, Theme.MUTED, false);
+        if (mouseX < sw && mouseY < 20 && !connection.message().isBlank()) {
             graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(connection.message()), 220), mouseX, mouseY);
         }
 
@@ -948,10 +987,19 @@ public class WorkspaceScreen extends SpruceScreen {
                 - (this.connectButton.isVisible() ? this.connectButton.getWidth() + 6 : 0);
         var detail = snap.selectedThread();
         if (detail != null) {
+            var owner = servers.activeProfile();
+            String icon = owner == null ? "" : owner.display(servers.environmentId()).icon();
+            if (!icon.isEmpty()) {
+                graphics.text(font, icon, mainX, 7, Theme.ACCENT, false);
+                mainX += font.width(icon) + 4;
+            }
             String title = Theme.ellipsize(font, Theme.orDefault(detail.title(), L10n.tr("chat.thread.untitled", "New thread")), rightLimit - mainX);
             var titleText = Component.literal(title).withStyle(s -> s.withBold(true));
             var project = snap.project(detail.projectId());
-            String sub = Theme.statusLabel(detail.status()) + (project == null ? "" : "  ·  " + Theme.orDefault(project.name(), project.path()));
+            String source = ConnectionsScreen.activeName(servers);
+            String name = project == null ? "" : Theme.orDefault(project.name(), project.path());
+            String sub = source + (name.isBlank() || name.equals(source) ? "" : "  ·  " + name);
+            if (!snap.drafting()) sub += "  ·  " + Theme.statusLabel(detail.status());
             sub = Theme.ellipsize(font, sub, rightLimit - mainX - 8);
             graphics.text(font, titleText, mainX, 7, Theme.TEXT, false);
             Theme.dot(graphics, mainX, 20, Theme.statusColor(detail.status()), detail.status() == ThreadStatus.RUNNING);
@@ -1000,13 +1048,26 @@ public class WorkspaceScreen extends SpruceScreen {
                 hint = snap.connection().state() == ConnectionState.CONNECTED ? L10n.tr("chat.hint.select_thread", "Select a thread to start typing")
                         : L10n.tr("chat.empty.not_connected", "Not connected");
             }
-            int hintY = this.height - 8 - SEND_ROW + (SEND_ROW - font.lineHeight) / 2 + 1;
+            int hintY = this.sendButton.getY() + (SEND_ROW - font.lineHeight) / 2 + 1;
             int hintX = this.modelButton.getEndX() + 8;
             int hintEnd = this.attachButton.getX() - 6;
             String hintText = Theme.ellipsize(font, hint, hintEnd - hintX);
             if (hintDetail == null && !hintText.equals(hint)) hintDetail = hint; // truncated (narrow window or long translation)
-            Theme.fillPlate(graphics, this.composer.getX(), this.composer.getEndY(), this.composer.getEndX(),
-                    this.height - 8, Theme.SHEET);
+            int left = composer.getX() - 5, right = composer.getEndX() + 5, top = composer.getY() - 5;
+            Theme.fillPlate(graphics, left, top, right, composerBottom, Theme.SHEET);
+            graphics.fill(left, top, right, composer.getEndY() + 5, Theme.INPUT);
+            Theme.outline(graphics, left, top, right - left, composer.getHeight() + 10,
+                    composer.isFocused() ? Theme.ACCENT : Theme.BORDER);
+            if (snap.drafting() && detail != null) {
+                var project = snap.project(detail.projectId());
+                String prompt = detail.projectId().isEmpty() ? L10n.tr("chat.draft.scratch_prompt", "What should we build?")
+                        : L10n.tr("chat.draft.prompt", "What should we build in %s?",
+                        project == null ? detail.projectId() : Theme.orDefault(project.name(), project.path()));
+                String line = Theme.ellipsize(font, prompt, right - left);
+                int x = (left + right - font.width(line)) / 2;
+                Theme.plate(graphics, x, top - 17, font.width(line), font.lineHeight, Theme.TEXT_PLATE);
+                graphics.text(font, line, x, top - 17, Theme.TEXT, false);
+            }
             graphics.text(font, hintText, hintX, hintY, hintColor, false);
             if (hintDetail != null && mouseX >= hintX && mouseX < hintEnd && mouseY >= hintY - 4 && mouseY < hintY + font.lineHeight + 4) {
                 graphics.vanilla().setTooltipForNextFrame(font, font.split(Component.literal(hintDetail), 240), mouseX, mouseY);

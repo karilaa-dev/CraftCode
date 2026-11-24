@@ -507,5 +507,20 @@
   "t3mc.time.days": "%sd",
   "t3mc.time.hours": "%sh",
   "t3mc.time.minutes": "%sm",
-  "t3mc.time.now": "now"
+  "t3mc.time.now": "now",
+  "t3mc.sidebar.search": "Search",
+  "t3mc.sidebar.filter": "Filter projects",
+  "t3mc.sidebar.filter_short": "Filter",
+  "t3mc.sidebar.all": "All projects",
+  "t3mc.sidebar.no_matches": "No matching threads",
+  "t3mc.chat.draft.scratch": "No project",
+  "t3mc.chat.draft.scratch_prompt": "What should we build?",
+  "t3mc.chat.draft.prompt": "What should we build in %s?",
+  "t3mc.settings.edit": "Edit server",
+  "t3mc.settings.other": "Other settings",
+  "t3mc.settings.done": "Done",
+  "t3mc.settings.hidden": "Hidden",
+  "t3mc.settings.shown": "Visible",
+  "t3mc.settings.icon": "Icon: %s",
+  "t3mc.settings.write_error": "Could not save settings."
 }
