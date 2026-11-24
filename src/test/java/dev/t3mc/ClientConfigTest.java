@@ -1,6 +1,7 @@
 package dev.t3mc;
 
 import dev.t3mc.ui.model.*;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -24,6 +25,74 @@ class ClientConfigTest {
         assertEquals("EMBER", com.google.gson.JsonParser.parseString(Files.readString(path))
                 .getAsJsonObject().get("theme").getAsString());
         assertEquals(ColorTheme.EMBER, ClientConfig.load(path).theme());
+    }
+
+    @Test void customColorsAreSeededFromThePresetAndSurviveSwitchingThemesAndProfiles() throws Exception {
+        var path = dir.resolve("t3mc.json");
+        var first = "https://first.example/mcp";
+        var second = "https://second.example/mcp";
+        var custom = new ColorTheme.Palette(0x010203, 0x111213, 0x212223, 0x313233, 0x414243, 0x515253,
+                0x616263, 0x717273, 0x818283, 0x919293, 0xa1a2a3, 0xb1b2b3);
+        assertEquals(0xff010203, custom.canvas());
+        ClientConfig.defaults().withConnection(first, NotificationMode.OFF).withGrant("grant").save(path);
+        try (var controller = new ClientController(path)) {
+            assertTrue(controller.setTheme(ColorTheme.GROVE));
+            var preset = controller.snapshot().settings();
+            assertFalse(preset.hasCustomPalette());
+            assertEquals(ColorTheme.GROVE.palette(), preset.customPalette());
+            assertTrue(controller.setCustomTheme(custom));
+            var active = controller.snapshot().settings();
+            assertTrue(active.hasCustomPalette());
+            assertEquals(ColorTheme.CUSTOM, active.theme());
+            assertEquals(custom, active.effectivePalette());
+            assertTrue(controller.setTheme(ColorTheme.OCEAN));
+            assertEquals(ColorTheme.OCEAN.palette(), controller.snapshot().settings().effectivePalette());
+            assertEquals(custom, controller.snapshot().settings().customPalette());
+            assertTrue(controller.setTransparency(70));
+            assertTrue(controller.toggleFavoriteModel("local", "model"));
+        }
+        var config = ClientConfig.load(path).withConnection(second, NotificationMode.CHAT)
+                .withLinksExpanded(second, false).withLinked(second, false).withGrant("second grant").select(first).remove(second);
+        config.save(path);
+        try (var controller = new ClientController(path)) {
+            var restored = controller.snapshot().settings();
+            assertEquals(ColorTheme.OCEAN, restored.theme());
+            assertTrue(restored.hasCustomPalette());
+            assertEquals(custom, restored.customPalette());
+            assertEquals(70, restored.transparency());
+            assertTrue(controller.setTheme(ColorTheme.CUSTOM));
+            assertEquals(custom, controller.snapshot().settings().effectivePalette());
+        }
+        assertEquals(custom, ClientConfig.load(path).view().effectivePalette());
+    }
+
+    @Test void incompleteCustomColorsRecoverWithoutLosingTheConnectionOrOtherSettings() throws Exception {
+        var path = dir.resolve("t3mc.json");
+        var config = ClientConfig.defaults().withConnection("https://first.example/mcp", NotificationMode.OFF)
+                .withGrant("fixture-token").withTheme(ColorTheme.IRIS).withTheme(ColorTheme.CUSTOM);
+        config.save(path);
+        assertEquals(ColorTheme.IRIS.palette(), ClientConfig.load(path).view().effectivePalette());
+        var valid = Files.readString(path);
+        for (String replacement : List.of("null", "[]", "{}", "\"#fff\"", "1.5", "999999999999")) {
+            var raw = JsonParser.parseString(valid).getAsJsonObject();
+            raw.getAsJsonObject("customPalette").add("muted", JsonParser.parseString(replacement));
+            Files.writeString(path, raw.toString());
+            var recovered = ClientConfig.load(path);
+            assertFalse(recovered.view().hasCustomPalette());
+            assertEquals(ColorTheme.DEFAULT, recovered.theme());
+            assertEquals("fixture-token", recovered.token());
+            assertEquals(NotificationMode.OFF, recovered.notificationMode());
+        }
+    }
+
+    @Test void aFailedCustomThemeSaveKeepsThePreviousSelectionAndColors() throws Exception {
+        var path = dir.resolve("settings/t3mc.json");
+        try (var controller = new ClientController(path)) {
+            var original = controller.snapshot().settings();
+            Files.writeString(path.getParent(), "fixture");
+            assertFalse(controller.setCustomTheme(ColorTheme.OCEAN.palette()));
+            assertEquals(original, controller.snapshot().settings());
+        }
     }
 
     @Test void aSavedTokenStaysBoundToItsEndpoint() throws Exception {

@@ -61,6 +61,12 @@ public final class ClientController implements AutoCloseable {
         return savePreference(config.withTheme(Objects.requireNonNull(theme)));
     }
 
+    public synchronized boolean setCustomTheme(ColorTheme.Palette palette) {
+        Objects.requireNonNull(palette);
+        if (config.theme() == ColorTheme.CUSTOM && palette.equals(config.customPalette())) return true;
+        return savePreference(config.withCustomTheme(palette));
+    }
+
     public synchronized boolean setTransparency(int percentage) {
         var next = config.withTransparency(percentage);
         return config.transparency() == next.transparency() || savePreference(next);

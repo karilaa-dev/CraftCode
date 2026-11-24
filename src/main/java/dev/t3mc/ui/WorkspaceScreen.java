@@ -139,7 +139,7 @@ public class WorkspaceScreen extends SpruceScreen {
         this.imageGeneration = servers.generation();
         this.destination = new Destination(servers.activeProfileId(), servers.environmentId());
         this.composerDrafts = this.draftsByDestination.computeIfAbsent(this.destination, ignored -> new HashMap<>());
-        Theme.sync(this.snapshot.settings().theme());
+        Theme.sync(this.snapshot.settings());
         Theme.setTransparency(this.snapshot.settings().transparency());
     }
 
@@ -158,7 +158,7 @@ public class WorkspaceScreen extends SpruceScreen {
         int pad = 12;
 
         // Sidebar
-        Theme.sync(snap.settings().theme());
+        Theme.sync(snap.settings());
         Theme.setTransparency(snap.settings().transparency());
         this.newThreadButton = this.addRenderableWidget(new FlatButton(Position.of(8, 34), sw - 16, 18, L10n.tr("chat.thread.new", "+  New thread"),
                 FlatButton.Kind.PRIMARY, b -> this.togglePicker()));
@@ -328,7 +328,7 @@ public class WorkspaceScreen extends SpruceScreen {
         var next = this.controller.snapshot();
         this.syncImageGeneration(next);
         Theme.setTransparency(next.settings().transparency()); // colors are read per frame; no rebuild needed
-        if (Theme.sync(next.settings().theme())) {
+        if (Theme.sync(next.settings())) {
             this.saveWidgetState();
             this.snapshot = next;
             this.rebuildWidgets();
@@ -963,7 +963,7 @@ public class WorkspaceScreen extends SpruceScreen {
 
         // Composer hint row
         if (this.composer != null) {
-            String hint;
+            String hint = "";
             String hintDetail = null;
             int hintColor = Theme.FAINT;
             if (this.pendingSend != null && detail != null && this.pendingSend.threadId().equals(detail.id())) {
@@ -996,9 +996,7 @@ public class WorkspaceScreen extends SpruceScreen {
                 hintColor = Theme.MUTED;
             } else if (snap.settings().connections().readOnly()) {
                 hint = L10n.tr("chat.hint.read_only", "Read-only environment");
-            } else if (this.composer.isActive()) {
-                hint = L10n.tr("chat.hint.keys", "Enter to send  ·  Shift+Enter new line  ·  Ctrl+M model  ·  Esc to close");
-            } else {
+            } else if (!this.composer.isActive()) {
                 hint = snap.connection().state() == ConnectionState.CONNECTED ? L10n.tr("chat.hint.select_thread", "Select a thread to start typing")
                         : L10n.tr("chat.empty.not_connected", "Not connected");
             }

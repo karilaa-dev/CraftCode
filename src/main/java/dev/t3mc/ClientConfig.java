@@ -16,7 +16,7 @@ import java.util.*;
 
 /** Local to the Minecraft instance. Never serialized into a game packet. */
 record ClientConfig(List<Profile> profiles, String activeProfileId, NotificationMode notificationMode, ColorTheme theme,
-                    List<ModelFavorite> favoriteModels, int transparency) {
+                    List<ModelFavorite> favoriteModels, int transparency, ColorTheme.Palette customPalette) {
     record Profile(String endpoint, String name, String token, boolean includeLinked, boolean linksExpanded) {
         @Override public String toString() { return name; }
     }
@@ -24,14 +24,14 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
     ClientConfig {
         profiles = List.copyOf(profiles);
         favoriteModels = favoriteModels == null ? List.of() : List.copyOf(favoriteModels);
-        if (theme == null) theme = ColorTheme.DEFAULT;
+        if (theme == null || theme == ColorTheme.CUSTOM && customPalette == null) theme = ColorTheme.DEFAULT;
         transparency = Math.clamp(transparency, 0, 100);
     }
 
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
 
     static ClientConfig defaults() {
-        return new ClientConfig(List.of(), "", NotificationMode.POPUP, ColorTheme.DEFAULT, List.of(), SettingsView.DEFAULT_TRANSPARENCY);
+        return new ClientConfig(List.of(), "", NotificationMode.POPUP, ColorTheme.DEFAULT, List.of(), SettingsView.DEFAULT_TRANSPARENCY, null);
     }
 
     Profile profile(String id) { return profiles.stream().filter(p -> p.endpoint.equals(id)).findFirst().orElse(null); }
@@ -39,17 +39,22 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
     String token() { var p = profile(activeProfileId); return p == null ? "" : p.token; }
     SettingsView view() { return view(ConnectionsView.empty()); }
     SettingsView view(ConnectionsView connections) {
-        return new SettingsView(httpUrl(), !token().isBlank(), notificationMode, theme, transparency, connections);
+        return new SettingsView(httpUrl(), !token().isBlank(), notificationMode, theme, transparency, connections, customPalette);
     }
 
     ClientConfig withTheme(ColorTheme next) {
-        return new ClientConfig(profiles, activeProfileId, notificationMode, next, favoriteModels, transparency);
+        var colors = next == ColorTheme.CUSTOM && customPalette == null ? theme.palette() : customPalette;
+        return new ClientConfig(profiles, activeProfileId, notificationMode, next, favoriteModels, transparency, colors);
+    }
+    ClientConfig withCustomTheme(ColorTheme.Palette palette) {
+        return new ClientConfig(profiles, activeProfileId, notificationMode, ColorTheme.CUSTOM, favoriteModels, transparency,
+                Objects.requireNonNull(palette));
     }
     ClientConfig withTransparency(int next) {
-        return new ClientConfig(profiles, activeProfileId, notificationMode, theme, favoriteModels, next);
+        return new ClientConfig(profiles, activeProfileId, notificationMode, theme, favoriteModels, next, customPalette);
     }
     ClientConfig withFavorites(List<ModelFavorite> favorites) {
-        return new ClientConfig(profiles, activeProfileId, notificationMode, theme, favorites, transparency);
+        return new ClientConfig(profiles, activeProfileId, notificationMode, theme, favorites, transparency, customPalette);
     }
     boolean includeLinked() { return includeLinked(activeProfileId); }
     boolean includeLinked(String id) {
@@ -70,12 +75,12 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
     private ClientConfig withLinkSettings(String profileId, boolean include, boolean expanded) {
         var updated = profiles.stream().map(p -> p.endpoint.equals(profileId)
                 ? new Profile(p.endpoint, p.name, p.token, include, expanded) : p).toList();
-        return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency);
+        return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
     ClientConfig withGrant(String grant) { return withGrant(activeProfileId, grant); }
     ClientConfig withGrant(String profileId, String grant) {
         var updated = profiles.stream().map(p -> p.endpoint.equals(profileId) ? new Profile(p.endpoint, p.name, grant, p.includeLinked, p.linksExpanded) : p).toList();
-        return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency);
+        return new ClientConfig(updated, activeProfileId, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
     ClientConfig withConnection(String endpoint, NotificationMode notifications) { return withProfile("", endpoint, notifications); }
     ClientConfig withProfile(String label, String endpoint, NotificationMode notifications) {
@@ -87,15 +92,15 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
         var entries = new ArrayList<>(profiles);
         if (previous == null) entries.add(next);
         else entries.set(entries.indexOf(previous), next);
-        return new ClientConfig(entries, endpoint, notifications, theme, favoriteModels, transparency);
+        return new ClientConfig(entries, endpoint, notifications, theme, favoriteModels, transparency, customPalette);
     }
     ClientConfig select(String id) {
-        return new ClientConfig(profiles, id, notificationMode, theme, favoriteModels, transparency);
+        return new ClientConfig(profiles, id, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
     ClientConfig remove(String id) {
         var rest = profiles.stream().filter(p -> !p.endpoint.equals(id)).toList();
         String active = activeProfileId.equals(id) ? (rest.isEmpty() ? "" : rest.getFirst().endpoint) : activeProfileId;
-        return new ClientConfig(rest, active, notificationMode, theme, favoriteModels, transparency);
+        return new ClientConfig(rest, active, notificationMode, theme, favoriteModels, transparency, customPalette);
     }
 
     static ClientConfig load(Path path) throws IOException {
@@ -128,8 +133,29 @@ record ClientConfig(List<Profile> profiles, String activeProfileId, Notification
             }
             if (!entries.containsKey(active)) active = entries.isEmpty() ? "" : entries.keySet().iterator().next();
             return new ClientConfig(List.copyOf(entries.values()), active, mode, theme,
-                    favorites == null ? List.of() : List.of(favorites), readTransparency(raw));
+                    favorites == null ? List.of() : List.of(favorites), readTransparency(raw), readCustomPalette(raw));
         } catch (RuntimeException e) { throw new IOException(tr("config.invalid", "Invalid T3 settings file."), e); }
+    }
+
+    private static ColorTheme.Palette readCustomPalette(JsonObject settings) {
+        var field = settings.get("customPalette");
+        if (field == null || !field.isJsonObject()) return null;
+        var colors = field.getAsJsonObject();
+        try {
+            return new ColorTheme.Palette(readColor(colors, "canvas"), readColor(colors, "sidebar"),
+                    readColor(colors, "panel"), readColor(colors, "input"), readColor(colors, "text"), readColor(colors, "muted"),
+                    readColor(colors, "border"), readColor(colors, "accent"), readColor(colors, "selected"),
+                    readColor(colors, "userBubble"), readColor(colors, "hover"), readColor(colors, "primaryText"));
+        } catch (IllegalArgumentException | ArithmeticException invalidPalette) {
+            return null;
+        }
+    }
+
+    private static int readColor(JsonObject colors, String role) {
+        var value = colors.get(role);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber())
+            throw new IllegalArgumentException(role);
+        return value.getAsBigDecimal().intValueExact();
     }
 
     /** Only migrate a saved grant with its own endpoint. An invite may point at a different host. */

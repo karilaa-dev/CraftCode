@@ -34,6 +34,7 @@ final class Theme {
     private static int[] BADGES = new int[0];
     private static boolean light;
     private static @Nullable ColorTheme current;
+    private static ColorTheme.Palette currentPalette;
     private static int transparency = SettingsView.DEFAULT_TRANSPARENCY;
     private static int canvasRgb, sidebarRgb, panelRgb;
 
@@ -41,14 +42,14 @@ final class Theme {
     static final int TRANSPARENCY_STEP = 5; // 5% steps: 0, 5, …, 35 (the default), …, 100
 
     static {
-        apply(ColorTheme.DEFAULT);
+        apply(ColorTheme.DEFAULT, ColorTheme.DEFAULT.palette());
     }
 
-    /** Applies {@code theme} if it is not already active. Returns true when the palette changed. */
-    static boolean sync(@Nullable ColorTheme theme) {
-        var target = theme == null ? ColorTheme.DEFAULT : theme;
-        if (target == current) return false;
-        apply(target);
+    /** A custom palette can change while the selected theme stays Custom. */
+    static boolean sync(SettingsView settings) {
+        var palette = settings.effectivePalette();
+        if (settings.theme() == current && palette.equals(currentPalette)) return false;
+        apply(settings.theme(), palette);
         return true;
     }
 
@@ -61,9 +62,9 @@ final class Theme {
     }
 
     /** Derives every UI color from the theme's base palette so all screens and controls follow it. */
-    static void apply(ColorTheme theme) {
+    private static void apply(ColorTheme theme, ColorTheme.Palette p) {
         current = theme;
-        var p = theme.palette();
+        currentPalette = p;
         int canvas = opaque(p.canvas());
         int panel = opaque(p.panel());
         int text = opaque(p.text());

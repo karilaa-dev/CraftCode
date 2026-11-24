@@ -29,7 +29,8 @@ import java.util.List;
 /**
  * Connection, notification, theme and shortcut settings.
  *
- * <p>Theme and transparency apply and save immediately, independent of <i>Save &amp; connect</i>.
+ * <p>Theme and transparency apply and save immediately, independent of <i>Save &amp; connect</i>. <i>Customize…</i>
+ * opens {@link ThemeEditorScreen}; the connection drafts (including the masked code) survive the round trip.
  *
  * <p>One connection form: a T3 URL (a T3 server or the MCP URL copied from T3 Code) and an optional connection code.
  * A blank code reuses the saved login for the same endpoint or signs in through the browser; a supplied code pairs
@@ -76,7 +77,7 @@ public class SettingsScreen extends SpruceScreen {
         this.saved = controller.snapshot().settings();
         this.url = adding ? "" : this.saved.httpUrl();
         this.notificationMode = this.saved.notificationMode();
-        Theme.sync(this.saved.theme());
+        Theme.sync(this.saved);
         Theme.setTransparency(this.saved.transparency());
     }
 
@@ -205,25 +206,38 @@ public class SettingsScreen extends SpruceScreen {
         if (roomy) y = this.wrapNote(y, fx, notifyHelp, Theme.FAINT, fw, noteLines);
         y += rowGap - 1;
 
-        // Theme: ‹ [name + swatches] › — cycles through every preset and applies (and saves) it right away.
+        // Theme: ‹ [name + swatches] › [Customize…] — the arrows cycle the presets (and Custom once one is saved),
+        // applying and saving right away; Customize opens the color editor on the current palette.
         this.labelRow(y, L10n.tr("settings.theme", "Theme"));
-        var theme = Theme.current();
-        var themes = ColorTheme.values();
+        var settings = this.controller.snapshot().settings();
+        var theme = settings.theme();
+        var themes = this.quickThemes(settings);
         int arrowW = 18;
         int midW = fw - (arrowW + 4) * 2;
-        int index = theme.ordinal();
+        String customizeLabel = L10n.tr("settings.theme.customize", "Customize…");
+        int customizeW = Math.min(this.buttonWidth(customizeLabel, 64), fw / 3);
+        int themeMidW = midW - customizeW - 4;
+        int index = Math.max(0, themes.indexOf(theme));
         var prev = new FlatButton(Position.of(fx, y), arrowW, 18, "‹", b -> this.cycleTheme(-1));
-        prev.setTooltip(Component.literal(themes[Math.floorMod(index - 1, themes.length)].label()));
+        prev.setTooltip(Component.literal(themes.get(Math.floorMod(index - 1, themes.size())).label()));
         this.addRenderableWidget(prev);
-        String label = L10n.tr("settings.theme.position", "%1$s  %2$s/%3$s", theme.label(), index + 1, themes.length);
-        this.addRenderableWidget(new FlatButton(Position.of(fx + arrowW + 4, y), midW, 18, label, FlatButton.Kind.SELECTED,
-                b -> this.cycleTheme(1)));
-        var next = new FlatButton(Position.of(fx + fw - arrowW, y), arrowW, 18, "›", b -> this.cycleTheme(1));
-        next.setTooltip(Component.literal(themes[Math.floorMod(index + 1, themes.length)].label()));
+        String label = L10n.tr("settings.theme.position", "%1$s  %2$s/%3$s", theme.label(), index + 1, themes.size());
+        if (this.font.width(label) + 8 > themeMidW) label = theme.label(); // compact: drop the "n/9" counter
+        var current = new FlatButton(Position.of(fx + arrowW + 4, y), themeMidW, 18, label, FlatButton.Kind.SELECTED,
+                b -> this.cycleTheme(1));
+        current.setTooltip(Component.literal(L10n.tr("settings.theme.tooltip", "Click or use ‹ › to switch themes.")));
+        this.addRenderableWidget(current);
+        var next = new FlatButton(Position.of(fx + arrowW + 4 + themeMidW + 4, y), arrowW, 18, "›", b -> this.cycleTheme(1));
+        next.setTooltip(Component.literal(themes.get(Math.floorMod(index + 1, themes.size())).label()));
         this.addRenderableWidget(next);
-        var palette = theme.palette();
+        var customize = new FlatButton(Position.of(fx + fw - customizeW, y), customizeW, 18, customizeLabel,
+                b -> this.openThemeEditor());
+        customize.setTooltip(Component.literal(L10n.tr("settings.theme.customize.tooltip",
+                "Edit every theme color, starting from the current one, and save it as your Custom theme.")));
+        this.addRenderableWidget(customize);
+        var palette = settings.effectivePalette();
         int sx = fx + arrowW + 4 + 5;
-        if (midW >= this.font.width(label) + 70) for (int color : new int[] {palette.canvas(), palette.accent(), palette.userBubble()}) {
+        if (themeMidW >= this.font.width(label) + 70) for (int color : new int[] {palette.canvas(), palette.accent(), palette.userBubble()}) {
             this.swatches.add(new Swatch(sx, y + 5, 0xFF000000 | color));
             sx += 10;
         }
@@ -381,15 +395,30 @@ public class SettingsScreen extends SpruceScreen {
 
     // ---------------------------------------------------------------- actions
 
+    /** Themes the arrows step through: the eight presets, plus Custom once a custom palette has been saved. */
+    private List<ColorTheme> quickThemes(SettingsView settings) {
+        var themes = new ArrayList<ColorTheme>();
+        for (var theme : ColorTheme.values())
+            if (theme != ColorTheme.CUSTOM || settings.hasCustomPalette() || settings.theme() == ColorTheme.CUSTOM) themes.add(theme);
+        return themes;
+    }
+
     private void cycleTheme(int direction) {
-        var themes = ColorTheme.values();
-        var next = themes[Math.floorMod(Theme.current().ordinal() + direction, themes.length)];
+        var settings = this.controller.snapshot().settings();
+        var themes = this.quickThemes(settings);
+        var next = themes.get(Math.floorMod(Math.max(0, themes.indexOf(settings.theme())) + direction, themes.size()));
         if (!this.controller.setTheme(next)) {
             this.fail(L10n.tr("settings.error.theme", "Could not save the theme."));
             return;
         }
-        Theme.apply(next);
+        Theme.sync(this.controller.snapshot().settings());
         this.rebuildKeepingFocus();
+    }
+
+    private void openThemeEditor() {
+        this.capturingKey = false;
+        this.openingChild = true; // keep drafts (including an unsent code) while the editor is open
+        this.minecraft.gui.setScreen(new ThemeEditorScreen(this, this.controller));
     }
 
     private void stepTransparency(int delta) {

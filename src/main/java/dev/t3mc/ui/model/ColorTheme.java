@@ -27,12 +27,28 @@ public enum ColorTheme {
             0xFFDDD2CE, 0xFFAE552A, 0xFFE5CCC0, 0xFFEBDAD1, 0xFFEAD8CF, 0xFFFFFAFF)),
     DARK("Classic Dark", new Palette(
             0xFF0D0E11, 0xFF131418, 0xFF181A1F, 0xFF121317, 0xFFE6E7EB, 0xFF8B8F99,
-            0xFF262830, 0xFF7C9CFF, 0xFF2A3040, 0xFF1C2433, 0xFF22252C, 0xFF101421));
+            0xFF262830, 0xFF7C9CFF, 0xFF2A3040, 0xFF1C2433, 0xFF22252C, 0xFF101421)),
+    CUSTOM("Custom", T3_CODE_DARK.palette());
 
     public static final ColorTheme DEFAULT = T3_CODE_DARK;
 
     public record Palette(int canvas, int sidebar, int panel, int input, int text, int muted,
-                          int border, int accent, int selected, int userBubble, int hover, int primaryText) {}
+                          int border, int accent, int selected, int userBubble, int hover, int primaryText) {
+        public Palette {
+            canvas |= 0xFF000000;
+            sidebar |= 0xFF000000;
+            panel |= 0xFF000000;
+            input |= 0xFF000000;
+            text |= 0xFF000000;
+            muted |= 0xFF000000;
+            border |= 0xFF000000;
+            accent |= 0xFF000000;
+            selected |= 0xFF000000;
+            userBubble |= 0xFF000000;
+            hover |= 0xFF000000;
+            primaryText |= 0xFF000000;
+        }
+    }
 
     private final String label;
     private final String translationKey;
